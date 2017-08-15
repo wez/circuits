@@ -60,10 +60,10 @@ impl Value {
         }
     }
 
-    pub fn as_f32(&self) -> Result<f32> {
+    pub fn as_f64(&self) -> Result<f64> {
         match self {
-            &Value::Float(ref s) => Ok(*s as f32),
-            &Value::Integer(ref s) => Ok(*s as f32),
+            &Value::Float(ref s) => Ok(*s),
+            &Value::Integer(ref s) => Ok(*s as f64),
             _ => Err(ErrorKind::NoFloatRep.into()),
         }
     }
@@ -151,7 +151,7 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
 }
 
 #[derive(Debug)]
-enum ShapeLayer {
+pub enum ShapeLayer {
     Pcb,
     Signal,
 }
@@ -173,38 +173,38 @@ impl ShapeLayer {
 
 #[derive(Debug)]
 pub struct DsnShape {
-    layer: ShapeLayer,
-    shape: geom::Shape,
+    pub layer: ShapeLayer,
+    pub shape: geom::Shape,
 }
 
 
 #[derive(Default, Debug)]
 pub struct Parser {
-    string_quote: String,
-    space_in_quoted_tokens: String,
-    host_cad: String,
-    host_version: String,
+    pub string_quote: String,
+    pub space_in_quoted_tokens: String,
+    pub host_cad: String,
+    pub host_version: String,
 }
 
 #[derive(Default, Debug)]
 pub struct Layer {
-    name: String,
-    layer_type: String,
-    index: i64,
+    pub name: String,
+    pub layer_type: String,
+    pub index: i64,
 }
 
 #[derive(Default, Debug)]
 pub struct Structure {
-    layers: Vec<Layer>,
-    boundary: Vec<DsnShape>,
+    pub layers: Vec<Layer>,
+    pub boundary: Vec<DsnShape>,
 }
 
 #[derive(Default, Debug)]
 pub struct Pcb {
-    file_name: String,
-    parser: Parser,
-    structure: Structure,
-    unit: String,
+    pub file_name: String,
+    pub parser: Parser,
+    pub structure: Structure,
+    pub unit: String,
 }
 
 impl DsnShape {
@@ -221,7 +221,7 @@ impl DsnShape {
 
         let mut points = Vec::new();
         for (x, y) in list.iter().skip(1).tuples() {
-            points.push(geom::Point::new(x.as_f32()?, y.as_f32()?));
+            points.push(geom::Point::new(x.as_f64()?, y.as_f64()?));
         }
 
         Ok(DsnShape {

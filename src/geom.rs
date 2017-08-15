@@ -2,19 +2,19 @@ extern crate ncollide;
 extern crate nalgebra as na;
 use std::sync::Arc;
 
-pub type Point = na::Point2<f32>;
-pub type Location = na::Isometry2<f32>;
-pub type Polyline = ncollide::shape::Polyline2<f32>;
-pub type ShapeHandle = ncollide::shape::ShapeHandle2<f32>;
-pub type Vector = na::Vector2<f32>;
+pub type Point = na::Point2<f64>;
+pub type Location = na::Isometry2<f64>;
+pub type Polyline = ncollide::shape::Polyline2<f64>;
+pub type ShapeHandle = ncollide::shape::ShapeHandle2<f64>;
+pub type Vector = na::Vector2<f64>;
 
 pub fn origin() -> Location {
     Location::new(Vector::new(0.0, 0.0), na::zero())
 }
 
 pub struct Shape {
-    handle: ShapeHandle,
-    location: Location,
+    pub handle: ShapeHandle,
+    pub location: Location,
 }
 
 impl Shape {
@@ -34,6 +34,11 @@ impl Shape {
             location: location,
         }
 
+    }
+
+    // returns the axis-aligned bounding-box
+    pub fn aabb(&self) -> ncollide::bounding_volume::AABB<Point> {
+        ncollide::bounding_volume::aabb(&*self.handle, &self.location)
     }
 }
 
