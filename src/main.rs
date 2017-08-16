@@ -12,12 +12,10 @@ extern crate conrod;
 mod dsn;
 mod geom;
 
-
 use std::error::Error;
 use self::dsn::Pcb;
 
 fn go() -> Result<(), Box<Error>> {
-    println!("Hello, world!");
     let pcb = Pcb::parse("left-pcb-no-fill.dsn")?;
     println!("made pcb: {:#?}", pcb);
 
@@ -121,6 +119,8 @@ fn go() -> Result<(), Box<Error>> {
             // We want to scale it to fit available space.
             // There's probably a better way to avoid all this math, but
             // conrod docs are pretty thin.  Something to investigate later.
+
+            // First, compute the overall bounds of the shapes we want to render.
             let bounds = {
                 let mut bounds = None;
                 for shape in pcb.structure.boundary.iter() {
@@ -134,6 +134,8 @@ fn go() -> Result<(), Box<Error>> {
                 }
                 bounds.unwrap()
             };
+            // That gives us the overall width and height
+            // in the pcb coordinate system.
             let p_width = bounds.maxs().coords.x - bounds.mins().coords.x;
             let p_height = bounds.maxs().coords.y - bounds.mins().coords.y;
 
@@ -141,26 +143,35 @@ fn go() -> Result<(), Box<Error>> {
             // the window border and the pcb boundary
             let padding = 20;
 
-            let factor = (HEIGHT - padding) as f64;
+            // Figure out how much we want to scale; we want to fix the zoom
+            // to show 100% of the circuit at all times, so we sanity check
+            // against both the width and the height.
+            let dim = ui.window_dim();
+            let mut factor = (dim[1] - padding as f64) / p_height;
+            if p_width * factor > dim[0] {
+                factor = (dim[0] - padding as f64) / p_width;
+            }
 
             // Compensate for scaled width and also for the origin of the
             // PointPath being in the center of its rectangle
             let x_offset = (-p_width / 2.0) - bounds.mins().coords.x;
             let y_offset = (-p_height / 2.0) - bounds.mins().coords.y;
 
-            let scale = |p: &geom::Point| {
-                let x: f64 = (p.coords.x + x_offset) * factor / p_width;
-                let y: f64 = (p.coords.y + y_offset) * factor / p_height;
-                [x, y]
-            };
+            // Apply the scaling Similarity transform first, followed by
+            // the translation transform for the offsets we computed.
+            let scale = geom::Similarity::new(geom::Vector::new(0.0, 0.0), 0.0, factor) *
+                        geom::Similarity::new(geom::Vector::new(x_offset, y_offset), 0.0, 1.0);
 
             let mut i = 0;
             let mut render_shape = |shape: &geom::Shape| if let Some(poly) =
                 shape.handle.as_shape::<geom::Polyline>() {
                 let mut points = Vec::new();
 
+                let xlate = shape.location * scale;
+
                 for p in poly.vertices().iter() {
-                    points.push(scale(p));
+                    let tp = xlate * p;
+                    points.push([tp.coords.x, tp.coords.y]);
                 }
 
                 widget::PointPath::new(points)

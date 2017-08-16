@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
+pub type Similarity = na::Similarity2<f64>;
 pub type Polyline = ncollide::shape::Polyline2<f64>;
 pub type ShapeHandle = ncollide::shape::ShapeHandle2<f64>;
 pub type Vector = na::Vector2<f64>;
