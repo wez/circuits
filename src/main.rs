@@ -163,31 +163,34 @@ fn go() -> Result<(), Box<Error>> {
                         geom::Similarity::new(geom::Vector::new(x_offset, y_offset), 0.0, 1.0);
 
             let mut i = 0;
-            let mut render_shape = |shape: &geom::Shape| if let Some(poly) =
-                shape.handle.as_shape::<geom::Polyline>() {
-                let mut points = Vec::new();
-
+            let mut render_shape = |shape: &geom::Shape, color: conrod::Color| {
                 let xlate = shape.location * scale;
 
-                for p in poly.vertices().iter() {
-                    let tp = xlate * p;
-                    points.push([tp.coords.x, tp.coords.y]);
-                }
+                if let Some(poly) = shape.handle.as_shape::<geom::Polyline>() {
+                    let mut points = Vec::new();
 
-                widget::PointPath::new(points)
-                    .color(color::LIGHT_BLUE)
-                    .wh_of(canvas)
-                    .middle_of(canvas)
-                    .set(shape_ids[i], ui);
-                i = i + 1;
+                    for p in poly.vertices().iter() {
+                        let tp = xlate * p;
+                        points.push([tp.coords.x, tp.coords.y]);
+                    }
+
+                    widget::PointPath::new(points)
+                        .color(color)
+                        .wh_of(canvas)
+                        .middle_of(canvas)
+                        .set(shape_ids[i], ui);
+                    i = i + 1;
+                }
             };
 
+            // boundary in light blue
             for shape in pcb.structure.boundary.iter() {
-                render_shape(&shape.shape);
+                render_shape(&shape.shape, color::LIGHT_BLUE);
             }
 
+            // keep out in red
             for shape in pcb.structure.keepout.iter() {
-                render_shape(&shape.shape);
+                render_shape(&shape.shape, color::RED);
             }
         }
 
