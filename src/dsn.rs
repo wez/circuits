@@ -197,6 +197,7 @@ pub struct Layer {
 pub struct Structure {
     pub layers: Vec<Layer>,
     pub boundary: Vec<DsnShape>,
+    pub keepout: Vec<DsnShape>,
 }
 
 #[derive(Default, Debug)]
@@ -211,7 +212,7 @@ impl DsnShape {
     //! parses a tagged list into a shape instance
     fn parse(tag: &String, list: &Vec<Value>) -> Result<DsnShape> {
         match tag.as_ref() {
-            "path" => DsnShape::parse_path(list),
+            "path" | "polygon" => DsnShape::parse_path(list),
             _ => Err(ErrorKind::UnhandledShapeType(tag.to_string()).into()),
         }
     }
@@ -220,7 +221,9 @@ impl DsnShape {
         let layer = ShapeLayer::from_value(&list[0])?;
 
         let mut points = Vec::new();
-        for (x, y) in list.iter().skip(1).tuples() {
+        // skip 2 because 0 is the layer that we parsed and index 1 is
+        // the aperture width.
+        for (x, y) in list.iter().skip(2).tuples() {
             points.push(geom::Point::new(x.as_f64()?, y.as_f64()?));
         }
 
@@ -314,6 +317,16 @@ impl Structure {
                     match k.as_ref() {
                         "layer" => {
                             self.layers.push(Layer::from_list(list)?);
+                        }
+                        "keepout" => {
+                            match &list[1] {
+                                &Value::TaggedList(ref tag, ref list) => {
+                                    self.keepout.push(DsnShape::parse(tag, list)?);
+                                }
+                                _ => {
+                                    println!("unhandled Structure::keepout{:?}", list);
+                                }
+                            }
                         }
                         _ => {
                             println!("unhandled key Structure::{}", k);
