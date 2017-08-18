@@ -8,6 +8,7 @@ pub type Similarity = na::Similarity2<f64>;
 pub type Polyline = ncollide::shape::Polyline2<f64>;
 pub type ShapeHandle = ncollide::shape::ShapeHandle2<f64>;
 pub type Vector = na::Vector2<f64>;
+pub type Circle = ncollide::shape::Ball2<f64>;
 
 pub fn origin() -> Location {
     Location::new(Vector::new(0.0, 0.0), na::zero())
@@ -37,9 +38,23 @@ impl Shape {
 
     }
 
+    pub fn circle(radius: f64, location: Location) -> Shape {
+        Shape {
+            handle: ShapeHandle::new(Circle::new(radius)),
+            location: location,
+        }
+    }
+
     // returns the axis-aligned bounding-box
     pub fn aabb(&self) -> ncollide::bounding_volume::AABB<Point> {
         ncollide::bounding_volume::aabb(&*self.handle, &self.location)
+    }
+
+    pub fn translate(&self, location: &Location) -> Shape {
+        return Shape {
+                   handle: self.handle.clone(),
+                   location: location * self.location,
+               };
     }
 }
 
@@ -49,6 +64,11 @@ impl ::std::fmt::Debug for Shape {
             write!(fmt,
                    "Polyline with {} vertices at {}",
                    poly.vertices().len(),
+                   self.location)?;
+        } else if let Some(circle) = self.handle.as_shape::<Circle>() {
+            write!(fmt,
+                   "Circle radius {} at {}",
+                   circle.radius(),
                    self.location)?;
         } else {
             write!(fmt, "Unhandled shape type at {}", self.location)?;

@@ -6,6 +6,7 @@ use std::str;
 extern crate nom;
 use geom;
 use itertools::Itertools;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 enum Value {
@@ -36,10 +37,6 @@ error_chain! {
         Nom(e: String) {
             description("parse error")
             display("parse error {}", e)
-        }
-        InvalidLayer(e: String) {
-            description("invalid layer")
-            display("invalid layer {}", e)
         }
     }
 }
@@ -151,29 +148,8 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
 }
 
 #[derive(Debug)]
-pub enum ShapeLayer {
-    Pcb,
-    Signal,
-}
-
-impl ShapeLayer {
-    fn from_value(v: &Value) -> Result<ShapeLayer> {
-        match v {
-            &Value::Literal(ref s) => {
-                match s.as_ref() {
-                    "pcb" => Ok(ShapeLayer::Pcb),
-                    "signal" => Ok(ShapeLayer::Signal),
-                    _ => Err(ErrorKind::InvalidLayer(s.to_string()).into()),
-                }
-            }
-            _ => Err(ErrorKind::InvalidLayer(format!("{:?}", v)).into()),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct DsnShape {
-    pub layer: ShapeLayer,
+    pub layer: String,
     pub shape: geom::Shape,
 }
 
@@ -200,12 +176,36 @@ pub struct Structure {
     pub keepout: Vec<DsnShape>,
 }
 
+#[derive(Debug)]
+pub struct Component {
+    pub component_type: String,
+    pub instance_name: String,
+    pub position: geom::Location,
+}
+
+#[derive(Debug)]
+pub struct Pin {
+    pub pad_type: String,
+    pub pad_num: i64,
+    pub position: geom::Location,
+}
+
+#[derive(Default, Debug)]
+pub struct ComponentDef {
+    pub component_type: String,
+    pub outlines: Vec<DsnShape>,
+    pub pins: Vec<Pin>,
+    pub keepout: Vec<DsnShape>,
+}
+
 #[derive(Default, Debug)]
 pub struct Pcb {
     pub file_name: String,
     pub parser: Parser,
     pub structure: Structure,
     pub unit: String,
+    pub components: Vec<Component>,
+    pub component_defs: HashMap<String, ComponentDef>,
 }
 
 impl DsnShape {
@@ -213,12 +213,32 @@ impl DsnShape {
     fn parse(tag: &String, list: &Vec<Value>) -> Result<DsnShape> {
         match tag.as_ref() {
             "path" | "polygon" => DsnShape::parse_path(list),
+            "circle" => DsnShape::parse_circle(list),
             _ => Err(ErrorKind::UnhandledShapeType(tag.to_string()).into()),
         }
     }
 
+    fn parse_circle(list: &Vec<Value>) -> Result<DsnShape> {
+        let layer = list[0].as_string()?;
+
+        let radius = list[1].as_f64()?;
+        let (x, y) = {
+            if list.len() > 2 {
+                (list[2].as_f64()?, list[3].as_f64()?)
+            } else {
+                (0.0, 0.0)
+            }
+        };
+
+        Ok(DsnShape {
+               layer: layer.clone(),
+               shape: geom::Shape::circle(radius / 2.0,
+                                          geom::Location::new(geom::Vector::new(x, y), 0.0)),
+           })
+    }
+
     fn parse_path(list: &Vec<Value>) -> Result<DsnShape> {
-        let layer = ShapeLayer::from_value(&list[0])?;
+        let layer = list[0].as_string()?;
 
         let mut points = Vec::new();
         // skip 2 because 0 is the layer that we parsed and index 1 is
@@ -228,7 +248,7 @@ impl DsnShape {
         }
 
         Ok(DsnShape {
-               layer: layer,
+               layer: layer.clone(),
                shape: geom::Shape::polygon(points, geom::origin()),
            })
     }
@@ -385,6 +405,12 @@ impl Pcb {
                                 "structure" => {
                                     pcb.structure.from_list(list)?;
                                 }
+                                "placement" => {
+                                    pcb.component_list(list)?;
+                                }
+                                "library" => {
+                                    pcb.component_def_list(list)?;
+                                }
                                 _ => {
                                     println!("unhandled key Pcb::{}", k);
                                 }
@@ -409,5 +435,114 @@ impl Pcb {
             }
             _ => Err(ErrorKind::ParseError("expected (pcb ...) but got something else").into()),
         }
+    }
+
+    fn component_list(&mut self, list: &Vec<Value>) -> Result<()> {
+        for ele in list.iter() {
+            match ele {
+                &Value::TaggedList(_, ref list) => {
+                    let component_type = list[0].as_string()?;
+                    println!("component_type {}", component_type);
+                    for place in list.iter().skip(1) {
+                        match place {
+                            &Value::TaggedList(_, ref list) => {
+                                let name = list[0].as_string()?;
+                                let x = list[1].as_f64()?;
+                                let y = list[2].as_f64()?;
+                                //let side = list[3].as_string()?;
+                                let rotation = list[4].as_f64()?;
+                                self.components
+                                    .push(Component {
+                                              component_type: component_type.clone(),
+                                              instance_name: name.clone(),
+                                              position: geom::Location::new(geom::Vector::new(x,
+                                                                                              y),
+                                                                            rotation.to_radians()),
+                                          })
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    println!("unhandled component list entry: {:?}", ele);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn image(&mut self, list: &Vec<Value>) -> Result<()> {
+        let mut def = ComponentDef::default();
+
+        def.component_type = list[0].as_string()?.clone();
+        println!("component_def {}", def.component_type);
+
+        for ele in list.iter().skip(1) {
+            match ele {
+                &Value::TaggedValue(ref tag, ref val) => {
+                    match tag.as_ref() {
+                        "outline" => {
+                            match &**val {
+                                &Value::TaggedList(ref t, ref l) => {
+                                    println!("doing an outline! {} {:?}", t, l);
+                                    def.outlines.push(DsnShape::parse(t, l)?);
+                                }
+                                _ => {
+                                    println!("unhandled outline {:?}", val);
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("unahdnled outline! {} {:?}", tag, val);
+                        }
+                    }
+                }
+                &Value::TaggedList(ref tag, ref list) => {
+                    match tag.as_ref() {
+                        "pin" => {}
+                        "keepout" => {
+                            match &list[1] {
+                                &Value::TaggedList(ref tag, ref list) => {
+                                    def.keepout.push(DsnShape::parse(tag, list)?);
+                                }
+                                _ => {
+                                    println!("unhandled image::keepout{:?}", list);
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("unhandled tag in library.image: {:?}", ele);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.component_defs
+            .insert(def.component_type.clone(), def);
+        Ok(())
+    }
+
+    fn component_def_list(&mut self, list: &Vec<Value>) -> Result<()> {
+        for image in list.iter() {
+            match image {
+                &Value::TaggedList(ref tag, ref list) => {
+                    match tag.as_ref() {
+                        "image" => {
+                            self.image(list)?;
+                        }
+                        _ => {
+                            println!("unhandled {:?}", image);
+                        }
+                    }
+                }
+                _ => {
+                    println!("unhandled library entry: {:?}", image);
+                }
+            }
+        }
+        Ok(())
     }
 }

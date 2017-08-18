@@ -54,6 +54,16 @@ fn go() -> Result<(), Box<Error>> {
         for _ in pcb.structure.keepout.iter() {
             shape_ids.push(ids.next());
         }
+        for comp in pcb.components.iter() {
+            let def = &pcb.component_defs[&comp.component_type];
+
+            for _ in def.outlines.iter() {
+                shape_ids.push(ids.next());
+            }
+            for _ in def.keepout.iter() {
+                shape_ids.push(ids.next());
+            }
+        }
         (canvas, grid, shape_ids)
     };
     let (canvas, grid, shape_ids) = make_ids(&mut ui);
@@ -164,7 +174,7 @@ fn go() -> Result<(), Box<Error>> {
 
             let mut i = 0;
             let mut render_shape = |shape: &geom::Shape, color: conrod::Color| {
-                let xlate = shape.location * scale;
+                let xlate = scale * shape.location;
 
                 if let Some(poly) = shape.handle.as_shape::<geom::Polyline>() {
                     let mut points = Vec::new();
@@ -176,8 +186,18 @@ fn go() -> Result<(), Box<Error>> {
 
                     widget::PointPath::new(points)
                         .color(color)
-                        .wh_of(canvas)
                         .middle_of(canvas)
+                        .set(shape_ids[i], ui);
+                    i = i + 1;
+                } else if let Some(circle) = shape.handle.as_shape::<geom::Circle>() {
+                    let p = xlate * geom::Point::new(0.0, 0.0);
+                    let r = xlate.scaling() * circle.radius();
+                    //println!("xlate {:?}", xlate);
+                    //println!("circle: rad {} -> {} at {:?}", circle.radius(), r, p);
+
+                    widget::Circle::outline(r)
+                        .color(color)
+                        .xy([p.coords.x, p.coords.y])
                         .set(shape_ids[i], ui);
                     i = i + 1;
                 }
@@ -191,6 +211,20 @@ fn go() -> Result<(), Box<Error>> {
             // keep out in red
             for shape in pcb.structure.keepout.iter() {
                 render_shape(&shape.shape, color::RED);
+            }
+
+            // components
+            for comp in pcb.components.iter() {
+                let def = &pcb.component_defs[&comp.component_type];
+
+                for outline in def.outlines.iter() {
+                    let s = outline.shape.translate(&comp.position);
+                    render_shape(&s, color::DARK_GREEN);
+                }
+                for out in def.keepout.iter() {
+                    let s = out.shape.translate(&comp.position);
+                    render_shape(&s, color::RED);
+                }
             }
         }
 
