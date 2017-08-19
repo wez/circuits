@@ -38,6 +38,7 @@ error_chain! {
             description("parse error")
             display("parse error {}", e)
         }
+        PinError
     }
 }
 
@@ -183,6 +184,12 @@ pub struct Component {
     pub position: geom::Location,
 }
 
+#[derive(Default, Debug)]
+pub struct PadStack {
+    pub pad_type: String,
+    pub pads: HashMap<String, DsnShape>,
+}
+
 #[derive(Debug)]
 pub struct Pin {
     pub pad_type: String,
@@ -206,6 +213,7 @@ pub struct Pcb {
     pub unit: String,
     pub components: Vec<Component>,
     pub component_defs: HashMap<String, ComponentDef>,
+    pub pad_defs: HashMap<String, PadStack>,
 }
 
 impl DsnShape {
@@ -214,6 +222,7 @@ impl DsnShape {
         match tag.as_ref() {
             "path" | "polygon" => DsnShape::parse_path(list),
             "circle" => DsnShape::parse_circle(list),
+            "rect" => DsnShape::parse_rect(list),
             _ => Err(ErrorKind::UnhandledShapeType(tag.to_string()).into()),
         }
     }
@@ -221,7 +230,7 @@ impl DsnShape {
     fn parse_circle(list: &Vec<Value>) -> Result<DsnShape> {
         let layer = list[0].as_string()?;
 
-        let radius = list[1].as_f64()?;
+        let diameter = list[1].as_f64()?;
         let (x, y) = {
             if list.len() > 2 {
                 (list[2].as_f64()?, list[3].as_f64()?)
@@ -232,7 +241,7 @@ impl DsnShape {
 
         Ok(DsnShape {
                layer: layer.clone(),
-               shape: geom::Shape::circle(radius / 2.0,
+               shape: geom::Shape::circle(diameter / 2.0,
                                           geom::Location::new(geom::Vector::new(x, y), 0.0)),
            })
     }
@@ -243,13 +252,39 @@ impl DsnShape {
         let mut points = Vec::new();
         // skip 2 because 0 is the layer that we parsed and index 1 is
         // the aperture width.
+        let aperture = list[1].as_f64()? / 2.0;
+        let width = if aperture == 0.0 {
+            None
+        } else {
+            Some(aperture)
+        };
+
         for (x, y) in list.iter().skip(2).tuples() {
             points.push(geom::Point::new(x.as_f64()?, y.as_f64()?));
         }
 
         Ok(DsnShape {
                layer: layer.clone(),
-               shape: geom::Shape::polygon(points, geom::origin()),
+               shape: geom::Shape::polygon(points, geom::origin(), width),
+           })
+    }
+
+    fn parse_rect(list: &Vec<Value>) -> Result<DsnShape> {
+        let layer = list[0].as_string()?;
+
+
+        let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
+        let (top_right_x, top_right_y) = (list[3].as_f64()?, list[4].as_f64()?);
+
+        let points = vec![geom::Point::new(bottom_left_x, bottom_left_y),
+                          geom::Point::new(bottom_left_x, top_right_y),
+                          geom::Point::new(top_right_x, top_right_y),
+                          geom::Point::new(top_right_x, bottom_left_y),
+                          geom::Point::new(bottom_left_x, bottom_left_y)];
+
+        Ok(DsnShape {
+               layer: layer.clone(),
+               shape: geom::Shape::polygon(points, geom::origin(), None),
            })
     }
 }
@@ -472,6 +507,39 @@ impl Pcb {
         Ok(())
     }
 
+    fn padstack(&mut self, list: &Vec<Value>) -> Result<()> {
+        let mut def = PadStack::default();
+        def.pad_type = list[0].as_string()?.clone();
+        println!("padstack {}", def.pad_type);
+
+        for ele in list.iter().skip(1) {
+            match ele {
+                &Value::TaggedValue(ref tag, ref val) => {
+                    match tag.as_ref() {
+                        "shape" => {
+                            match &**val {
+                                &Value::TaggedList(ref t, ref l) => {
+                                    let shape = DsnShape::parse(t, l)?;
+                                    def.pads.insert(shape.layer.clone(), shape);
+                                }
+                                _ => {
+                                    println!("unhandled padstack {:?}", val);
+                                }
+                            }
+                        }
+                        _ => {
+                            println!("unhandled padstack {} {:?}", tag, val);
+                        }
+                    }
+                }
+                _ => {}
+            }
+
+        }
+        self.pad_defs.insert(def.pad_type.clone(), def);
+        Ok(())
+    }
+
     fn image(&mut self, list: &Vec<Value>) -> Result<()> {
         let mut def = ComponentDef::default();
 
@@ -500,7 +568,9 @@ impl Pcb {
                 }
                 &Value::TaggedList(ref tag, ref list) => {
                     match tag.as_ref() {
-                        "pin" => {}
+                        "pin" => {
+                            def.pins.push(self.parse_pin(list)?);
+                        }
                         "keepout" => {
                             match &list[1] {
                                 &Value::TaggedList(ref tag, ref list) => {
@@ -525,6 +595,33 @@ impl Pcb {
         Ok(())
     }
 
+    fn parse_pin(&self, list: &Vec<Value>) -> Result<Pin> {
+        println!("parse_pin {:?}", list);
+        if list.len() == 4 {
+            Ok(Pin {
+                   pad_type: list[0].as_string()?.clone(),
+                   pad_num: list[1].as_i64()?,
+                   position: geom::Location::new(geom::Vector::new(list[2].as_f64()?,
+                                                                   list[3].as_f64()?),
+                                                 0.0),
+               })
+        } else {
+            match &list[1] {
+                &Value::TaggedValue(_, ref rot) => {
+                    let degrees = rot.as_f64()?;
+                    Ok(Pin {
+                           pad_type: list[0].as_string()?.clone(),
+                           pad_num: list[2].as_i64()?,
+                           position: geom::Location::new(geom::Vector::new(list[3].as_f64()?,
+                                                                           list[4].as_f64()?),
+                                                         degrees.to_radians()),
+                       })
+                }
+                _ => Err(ErrorKind::PinError.into()),
+            }
+        }
+    }
+
     fn component_def_list(&mut self, list: &Vec<Value>) -> Result<()> {
         for image in list.iter() {
             match image {
@@ -532,6 +629,9 @@ impl Pcb {
                     match tag.as_ref() {
                         "image" => {
                             self.image(list)?;
+                        }
+                        "padstack" => {
+                            self.padstack(list)?;
                         }
                         _ => {
                             println!("unhandled {:?}", image);

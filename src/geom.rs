@@ -17,11 +17,12 @@ pub fn origin() -> Location {
 pub struct Shape {
     pub handle: ShapeHandle,
     pub location: Location,
+    pub width: Option<f64>,
 }
 
 impl Shape {
     // Make a polygon from the provided points.
-    pub fn polygon(points: Vec<Point>, location: Location) -> Shape {
+    pub fn polygon(points: Vec<Point>, location: Location, width: Option<f64>) -> Shape {
         let mut indices = Vec::new();
         for i in 0..points.len() - 1 {
             indices.push(na::Point2::new(i, i + 1));
@@ -34,6 +35,7 @@ impl Shape {
                                                    None,
                                                    None)),
             location: location,
+            width: width,
         }
 
     }
@@ -42,6 +44,7 @@ impl Shape {
         Shape {
             handle: ShapeHandle::new(Circle::new(radius)),
             location: location,
+            width: None,
         }
     }
 
@@ -54,6 +57,7 @@ impl Shape {
         return Shape {
                    handle: self.handle.clone(),
                    location: location * self.location,
+                   width: self.width,
                };
     }
 }

@@ -63,6 +63,11 @@ fn go() -> Result<(), Box<Error>> {
             for _ in def.keepout.iter() {
                 shape_ids.push(ids.next());
             }
+
+            for _ in def.pins.iter() {
+                shape_ids.push(ids.next());
+                shape_ids.push(ids.next());
+            }
         }
         (canvas, grid, shape_ids)
     };
@@ -184,7 +189,19 @@ fn go() -> Result<(), Box<Error>> {
                         points.push([tp.coords.x, tp.coords.y]);
                     }
 
-                    widget::PointPath::new(points)
+                    let style = match shape.width {
+                        Some(width) => {
+                            // This doesn't render exactly how I'd like; what
+                            // we really want here is to render the minkowski
+                            // sum of a circle with the specified width walked
+                            // along the described path, because that is how
+                            // the pad is going to be drilled out on the pcb
+                            widget::primitive::line::Style::new().thickness(width * xlate.scaling())
+                        }
+                        None => widget::primitive::line::Style::new(),
+                    };
+
+                    widget::PointPath::styled(points, style)
                         .color(color)
                         .middle_of(canvas)
                         .set(shape_ids[i], ui);
@@ -224,6 +241,15 @@ fn go() -> Result<(), Box<Error>> {
                 for out in def.keepout.iter() {
                     let s = out.shape.translate(&comp.position);
                     render_shape(&s, color::RED);
+                }
+
+                for pin in def.pins.iter() {
+                    let pad_def = &pcb.pad_defs[&pin.pad_type];
+                    for (_, pad_shape) in pad_def.pads.iter() {
+                        let x = comp.position * pin.position;
+                        let s = pad_shape.shape.translate(&x);
+                        render_shape(&s, color::YELLOW);
+                    }
                 }
             }
         }
