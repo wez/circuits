@@ -15,7 +15,6 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     TaggedList(String, Vec<Value>),
-    TaggedValue(String, Box<Value>),
 }
 
 error_chain! {
@@ -41,6 +40,10 @@ error_chain! {
             description("expected tagged list")
             display("expected (tag ...) but got {:?}", value)
         }
+        ExpectedTaggedValue(value: Value) {
+            description("expected tagged list with single value")
+            display("expected (tag value) but got {:?}", value)
+        }
         UnexpectedValue(value: Value) {
             description("unexpected value")
             display("unexpected value {:?}", value)
@@ -49,7 +52,6 @@ error_chain! {
             description("parse error")
             display("parse error {}", e)
         }
-        PinError
     }
 }
 
@@ -79,21 +81,20 @@ impl Value {
 
     pub fn as_tagged_value(&self) -> Result<(&String, Value)> {
         match self {
-            &Value::TaggedValue(ref tag, ref value) => {
-                let v = (**value).clone();
-                Ok((tag, v))
+            &Value::TaggedList(ref tag, ref list) => {
+                if list.len() != 1 {
+                    Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
+                } else {
+                    Ok((tag, list[0].clone()))
+                }
             }
-            _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
+            _ => Err(ErrorKind::ExpectedTaggedValue(self.clone()).into()),
         }
     }
 
     pub fn as_tagged_list(&self) -> Result<(&String, Vec<Value>)> {
         match self {
             &Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
-            &Value::TaggedValue(ref tag, ref value) => {
-                let v = (**value).clone();
-                Ok((tag, vec![v]))
-            }
             _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
         }
     }
@@ -107,14 +108,6 @@ impl Value {
                     Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
                 }
             }
-            &Value::TaggedValue(ref tag, ref value) => {
-                if tag == name {
-                    let v = (**value).clone();
-                    Ok(vec![v])
-                } else {
-                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
-                }
-            }
             _ => Err(ErrorKind::UnexpectedTag(name, self.clone()).into()),
         }
     }
@@ -123,9 +116,9 @@ impl Value {
 
 named!(string_quote_parser<&[u8], Value>, do_parse!(
     tag!("(string_quote \")") >>
-    (Value::TaggedValue(
+    (Value::TaggedList(
             "string_quote".to_owned(),
-            Box::new(Value::Literal("\"".to_owned()))
+            vec![Value::Literal("\"".to_owned())]
        ))
 ));
 
@@ -160,13 +153,6 @@ named!(literal_parser<&[u8], Value>,
     (literal_or_numeric(s))
 ));
 
-fn parse_tagged(t: &str, mut args: Vec<Value>) -> Value {
-    match args.len() {
-        1 => Value::TaggedValue(t.to_owned(), Box::new(args.remove(0))),
-        _ => Value::TaggedList(t.to_owned(), args),
-    }
-}
-
 named!(tagged_list_parser<&[u8], Value>, do_parse!(
     opt!(nom::multispace) >>
     char!('(') >>
@@ -180,7 +166,7 @@ named!(tagged_list_parser<&[u8], Value>, do_parse!(
                 )) >>
     opt!(nom::multispace) >>
     char!(')') >>
-    (parse_tagged(t, args))
+    (Value::TaggedList(t.to_owned(), args))
 ));
 
 fn parse_value(bytes: &[u8]) -> Result<Value> {
@@ -657,19 +643,15 @@ impl Pcb {
                                                  0.0),
                })
         } else {
-            match &list[1] {
-                &Value::TaggedValue(_, ref rot) => {
-                    let degrees = rot.as_f64()?;
-                    Ok(Pin {
-                           pad_type: list[0].as_string()?.clone(),
-                           pad_num: list[2].as_i64()?,
-                           position: geom::Location::new(geom::Vector::new(list[3].as_f64()?,
-                                                                           list[4].as_f64()?),
-                                                         degrees.to_radians()),
-                       })
-                }
-                _ => Err(ErrorKind::PinError.into()),
-            }
+            let rot = list[1].as_tagged_list_with_name("rotate")?;
+            let degrees = rot[0].as_f64()?;
+            Ok(Pin {
+                   pad_type: list[0].as_string()?.clone(),
+                   pad_num: list[2].as_i64()?,
+                   position: geom::Location::new(geom::Vector::new(list[3].as_f64()?,
+                                                                   list[4].as_f64()?),
+                                                 degrees.to_radians()),
+               })
         }
     }
 
