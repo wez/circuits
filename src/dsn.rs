@@ -367,21 +367,23 @@ impl DsnShape {
 
 impl Parser {
     //! parses a value list into an existing Parser object
-    fn from_list(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn new(list: &Vec<Value>) -> Result<Parser> {
+        let mut p = Parser::default();
+
         for ele in list.iter() {
             let (k, v) = ele.as_tagged_value()?;
             match k.as_ref() {
                 "string_quote" => {
-                    self.string_quote = v.as_string()?.clone();
+                    p.string_quote = v.as_string()?.clone();
                 }
                 "space_in_quoted_tokens" => {
-                    self.space_in_quoted_tokens = v.as_string()?.clone();
+                    p.space_in_quoted_tokens = v.as_string()?.clone();
                 }
                 "host_cad" => {
-                    self.host_cad = v.as_string()?.clone();
+                    p.host_cad = v.as_string()?.clone();
                 }
                 "host_version" => {
-                    self.host_version = v.as_string()?.clone();
+                    p.host_version = v.as_string()?.clone();
                 }
                 _ => {
                     return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
@@ -389,13 +391,13 @@ impl Parser {
             }
         }
 
-        Ok(())
+        Ok(p)
     }
 }
 
 impl Layer {
     //! parses a value list into a new Layer object
-    fn from_list(list: &Vec<Value>) -> Result<Layer> {
+    fn new(list: &Vec<Value>) -> Result<Layer> {
         let mut l = Layer::default();
 
         l.name = list[0].as_string()?.clone();
@@ -427,7 +429,7 @@ impl Layer {
 }
 
 impl Rule {
-    fn from_list(list: &Vec<Value>) -> Result<Rule> {
+    fn new(list: &Vec<Value>) -> Result<Rule> {
         let mut rule = Rule::default();
 
         for ele in list.iter() {
@@ -455,33 +457,34 @@ impl Rule {
 
 impl Structure {
     //! parses a value list and populates an existing Structure instance
-    fn from_list(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn new(list: &Vec<Value>) -> Result<Structure> {
+        let mut s = Structure::default();
         for ele in list.iter() {
             let (k, list) = ele.as_tagged_list()?;
             match k.as_ref() {
                 "layer" => {
-                    self.layers.push(Layer::from_list(&list)?);
+                    s.layers.push(Layer::new(&list)?);
                 }
                 "keepout" => {
                     let (tag, list) = list[1].as_tagged_list()?;
-                    self.keepout.push(DsnShape::parse(tag, &list)?);
+                    s.keepout.push(DsnShape::parse(tag, &list)?);
                 }
                 "boundary" => {
                     let (tag, list) = list[0].as_tagged_list()?;
-                    self.boundary.push(DsnShape::parse(tag, &list)?);
+                    s.boundary.push(DsnShape::parse(tag, &list)?);
                 }
                 "via" => {
-                    self.via = list[0].as_string()?.clone();
+                    s.via = list[0].as_string()?.clone();
                 }
                 "rule" => {
-                    self.rule = Rule::from_list(&list)?;
+                    s.rule = Rule::new(&list)?;
                 }
                 _ => {
                     return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
         }
-        Ok(())
+        Ok(s)
     }
 }
 
@@ -504,10 +507,10 @@ impl Pcb {
             let (tagname, list) = ele.as_tagged_list()?;
             match tagname.as_ref() {
                 "parser" => {
-                    pcb.parser.from_list(&list)?;
+                    pcb.parser = Parser::new(&list)?;
                 }
                 "structure" => {
-                    pcb.structure.from_list(&list)?;
+                    pcb.structure = Structure::new(&list)?;
                 }
                 "placement" => {
                     pcb.component_list(&list)?;
