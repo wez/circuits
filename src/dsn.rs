@@ -6,10 +6,10 @@ use std::str;
 extern crate nom;
 use geom;
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
-enum Value {
+pub enum Value {
     Literal(String),
     Quoted(String),
     Integer(i64),
@@ -33,6 +33,18 @@ error_chain! {
         ParseError(a: &'static str) {
             description(".dsn file parse error")
             display("parse error: {}", a)
+        }
+        UnexpectedTag(a: &'static str, value: Value) {
+            description("unexpected tag")
+            display("expected ({} ...) but got {:?}", a, value)
+        }
+        ExpectedTaggedList(value: Value) {
+            description("expected tagged list")
+            display("expected (tag ...) but got {:?}", value)
+        }
+        UnexpectedValue(value: Value) {
+            description("unexpected value")
+            display("unexpected value {:?}", value)
         }
         Nom(e: String) {
             description("parse error")
@@ -63,6 +75,38 @@ impl Value {
             &Value::Float(ref s) => Ok(*s),
             &Value::Integer(ref s) => Ok(*s as f64),
             _ => Err(ErrorKind::NoFloatRep.into()),
+        }
+    }
+
+    pub fn as_tagged_list(&self) -> Result<(&String, Vec<Value>)> {
+        match self {
+            &Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
+            &Value::TaggedValue(ref tag, ref value) => {
+                let v = (**value).clone();
+                Ok((tag, vec![v]))
+            }
+            _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
+        }
+    }
+
+    pub fn as_tagged_list_with_name(&self, name: &'static str) -> Result<Vec<Value>> {
+        match self {
+            &Value::TaggedList(ref tag, ref list) => {
+                if tag == name {
+                    Ok(list.clone())
+                } else {
+                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
+                }
+            }
+            &Value::TaggedValue(ref tag, ref value) => {
+                if tag == name {
+                    let v = (**value).clone();
+                    Ok(vec![v])
+                } else {
+                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
+                }
+            }
+            _ => Err(ErrorKind::UnexpectedTag(name, self.clone()).into()),
         }
     }
 }
@@ -206,6 +250,17 @@ pub struct ComponentDef {
 }
 
 #[derive(Default, Debug)]
+pub struct Net {
+    pub pins: Vec<String>,
+}
+
+#[derive(Default, Debug)]
+pub struct NetClass {
+    pub class_name: String,
+    pub nets: HashSet<String>,
+}
+
+#[derive(Default, Debug)]
 pub struct Pcb {
     pub file_name: String,
     pub parser: Parser,
@@ -214,6 +269,8 @@ pub struct Pcb {
     pub components: Vec<Component>,
     pub component_defs: HashMap<String, ComponentDef>,
     pub pad_defs: HashMap<String, PadStack>,
+    pub networks: HashMap<String, Net>,
+    pub net_classes: HashMap<String, NetClass>,
 }
 
 impl DsnShape {
@@ -446,6 +503,9 @@ impl Pcb {
                                 "library" => {
                                     pcb.component_def_list(list)?;
                                 }
+                                "network" => {
+                                    pcb.network_list(list)?;
+                                }
                                 _ => {
                                     println!("unhandled key Pcb::{}", k);
                                 }
@@ -470,6 +530,38 @@ impl Pcb {
             }
             _ => Err(ErrorKind::ParseError("expected (pcb ...) but got something else").into()),
         }
+    }
+
+    fn network_list(&mut self, list: &Vec<Value>) -> Result<()> {
+        for ele in list.iter() {
+            let (tagname, list) = ele.as_tagged_list()?;
+            match tagname.as_ref() {
+                "net" => {
+                    let netname = list[0].as_string()?;
+                    let pinlist = list[1].as_tagged_list_with_name("pins")?;
+                    let mut net = Net::default();
+                    for pin in pinlist.iter() {
+                        net.pins.push(pin.as_string()?.clone());
+                    }
+                    self.networks.insert(netname.clone(), net);
+                }
+                "class" => {
+                    let mut class = NetClass::default();
+                    class.class_name = list[0].as_string()?.clone();
+                    for ele in list.iter().skip(1) {
+                        match ele {
+                            &Value::Literal(ref s) => {
+                                class.nets.insert(s.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.net_classes.insert(class.class_name.clone(), class);
+                }
+                _ => return Err(ErrorKind::UnexpectedValue(ele.clone()).into()),
+            }
+        }
+        Ok(())
     }
 
     fn component_list(&mut self, list: &Vec<Value>) -> Result<()> {
@@ -553,7 +645,6 @@ impl Pcb {
                         "outline" => {
                             match &**val {
                                 &Value::TaggedList(ref t, ref l) => {
-                                    println!("doing an outline! {} {:?}", t, l);
                                     def.outlines.push(DsnShape::parse(t, l)?);
                                 }
                                 _ => {
@@ -596,7 +687,6 @@ impl Pcb {
     }
 
     fn parse_pin(&self, list: &Vec<Value>) -> Result<Pin> {
-        println!("parse_pin {:?}", list);
         if list.len() == 4 {
             Ok(Pin {
                    pad_type: list[0].as_string()?.clone(),
