@@ -231,6 +231,7 @@ pub struct Component {
 pub struct PadStack {
     pub pad_type: String,
     pub pads: HashMap<String, DsnShape>,
+    pub attach: bool,
 }
 
 #[derive(Debug)]
@@ -572,29 +573,24 @@ impl Pcb {
     fn padstack(&mut self, list: &Vec<Value>) -> Result<()> {
         let mut def = PadStack::default();
         def.pad_type = list[0].as_string()?.clone();
-        println!("padstack {}", def.pad_type);
 
         for ele in list.iter().skip(1) {
-            match ele {
-                &Value::TaggedValue(ref tag, ref val) => {
-                    match tag.as_ref() {
-                        "shape" => {
-                            match &**val {
-                                &Value::TaggedList(ref t, ref l) => {
-                                    let shape = DsnShape::parse(t, l)?;
-                                    def.pads.insert(shape.layer.clone(), shape);
-                                }
-                                _ => {
-                                    println!("unhandled padstack {:?}", val);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unhandled padstack {} {:?}", tag, val);
-                        }
+            let (tag, list) = ele.as_tagged_list()?;
+            match tag.as_ref() {
+                "shape" => {
+                    let (t, l) = list[0].as_tagged_list()?;
+                    let shape = DsnShape::parse(t, &l)?;
+                    def.pads.insert(shape.layer.clone(), shape);
+                }
+                "attach" => {
+                    let v = list[0].as_string()?;
+                    if v == "on" {
+                        def.attach = true;
                     }
                 }
-                _ => {}
+                _ => {
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
+                }
             }
 
         }
