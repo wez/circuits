@@ -604,50 +604,25 @@ impl Pcb {
 
     fn image(&mut self, list: &Vec<Value>) -> Result<()> {
         let mut def = ComponentDef::default();
-
         def.component_type = list[0].as_string()?.clone();
-        println!("component_def {}", def.component_type);
 
         for ele in list.iter().skip(1) {
-            match ele {
-                &Value::TaggedValue(ref tag, ref val) => {
-                    match tag.as_ref() {
-                        "outline" => {
-                            match &**val {
-                                &Value::TaggedList(ref t, ref l) => {
-                                    def.outlines.push(DsnShape::parse(t, l)?);
-                                }
-                                _ => {
-                                    println!("unhandled outline {:?}", val);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unahdnled outline! {} {:?}", tag, val);
-                        }
-                    }
+            let (tagname, list) = ele.as_tagged_list()?;
+            match tagname.as_ref() {
+                "outline" => {
+                    let (t, l) = list[0].as_tagged_list()?;
+                    def.outlines.push(DsnShape::parse(t, &l)?);
                 }
-                &Value::TaggedList(ref tag, ref list) => {
-                    match tag.as_ref() {
-                        "pin" => {
-                            def.pins.push(self.parse_pin(list)?);
-                        }
-                        "keepout" => {
-                            match &list[1] {
-                                &Value::TaggedList(ref tag, ref list) => {
-                                    def.keepout.push(DsnShape::parse(tag, list)?);
-                                }
-                                _ => {
-                                    println!("unhandled image::keepout{:?}", list);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unhandled tag in library.image: {:?}", ele);
-                        }
-                    }
+                "pin" => {
+                    def.pins.push(self.parse_pin(&list)?);
                 }
-                _ => {}
+                "keepout" => {
+                    let (t, l) = list[1].as_tagged_list()?;
+                    def.keepout.push(DsnShape::parse(t, &l)?);
+                }
+                _ => {
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
+                }
             }
         }
 
@@ -684,22 +659,16 @@ impl Pcb {
 
     fn component_def_list(&mut self, list: &Vec<Value>) -> Result<()> {
         for image in list.iter() {
-            match image {
-                &Value::TaggedList(ref tag, ref list) => {
-                    match tag.as_ref() {
-                        "image" => {
-                            self.image(list)?;
-                        }
-                        "padstack" => {
-                            self.padstack(list)?;
-                        }
-                        _ => {
-                            println!("unhandled {:?}", image);
-                        }
-                    }
+            let (tagname, list) = image.as_tagged_list()?;
+            match tagname.as_ref() {
+                "image" => {
+                    self.image(&list)?;
+                }
+                "padstack" => {
+                    self.padstack(&list)?;
                 }
                 _ => {
-                    println!("unhandled library entry: {:?}", image);
+                    return Err(ErrorKind::UnexpectedValue(image.clone()).into());
                 }
             }
         }
