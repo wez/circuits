@@ -23,16 +23,15 @@ error_chain! {
         Io(::std::io::Error);
     }
     errors {
-        NoStringRep
+        NoStringRep(value: Value) {
+            description("no string representation")
+            display("no string representation for {:?}", value)
+        }
         NoIntRep
         NoFloatRep
         UnhandledShapeType(a: String) {
             description("no parser for a shape type")
             display("unhandled shape type {}", a)
-        }
-        ParseError(a: &'static str) {
-            description(".dsn file parse error")
-            display("parse error: {}", a)
         }
         UnexpectedTag(a: &'static str, value: Value) {
             description("unexpected tag")
@@ -59,7 +58,7 @@ impl Value {
         match self {
             &Value::Quoted(ref s) => Ok(s),
             &Value::Literal(ref s) => Ok(s),
-            _ => Err(ErrorKind::NoStringRep.into()),
+            _ => Err(ErrorKind::NoStringRep(self.clone()).into()),
         }
     }
 
@@ -485,51 +484,34 @@ impl Pcb {
         let v = parse_value(buffer.as_bytes())?;
         let mut pcb = Pcb::default();
 
-        match &v {
-            &Value::TaggedList(_, ref list) => {
-                for ele in list.iter().skip(1) {
-                    match ele {
-                        &Value::TaggedList(ref k, ref list) => {
-                            match k.as_ref() {
-                                "parser" => {
-                                    pcb.parser.from_list(list)?;
-                                }
-                                "structure" => {
-                                    pcb.structure.from_list(list)?;
-                                }
-                                "placement" => {
-                                    pcb.component_list(list)?;
-                                }
-                                "library" => {
-                                    pcb.component_def_list(list)?;
-                                }
-                                "network" => {
-                                    pcb.network_list(list)?;
-                                }
-                                _ => {
-                                    println!("unhandled key Pcb::{}", k);
-                                }
-                            }
-                        }
-                        &Value::TaggedValue(ref k, ref v) => {
-                            match k.as_ref() {
-                                "unit" => {
-                                    pcb.unit = v.as_string()?.clone();
-                                }
-                                _ => {
-                                    println!("unhandled key Pcb::{}", k);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unhanded Pcb: {:?}", ele);
-                        }
-                    }
+        let list = v.as_tagged_list_with_name("pcb")?;
+        for ele in list.iter().skip(1) {
+            let (tagname, list) = ele.as_tagged_list()?;
+            match tagname.as_ref() {
+                "parser" => {
+                    pcb.parser.from_list(&list)?;
                 }
-                Ok(pcb)
+                "structure" => {
+                    pcb.structure.from_list(&list)?;
+                }
+                "placement" => {
+                    pcb.component_list(&list)?;
+                }
+                "library" => {
+                    pcb.component_def_list(&list)?;
+                }
+                "network" => {
+                    pcb.network_list(&list)?;
+                }
+                "unit" => {
+                    pcb.unit = list[0].as_string()?.clone();
+                }
+                _ => {
+                    println!("unhandled key Pcb::{:?}", ele);
+                }
             }
-            _ => Err(ErrorKind::ParseError("expected (pcb ...) but got something else").into()),
         }
+        Ok(pcb)
     }
 
     fn network_list(&mut self, list: &Vec<Value>) -> Result<()> {
