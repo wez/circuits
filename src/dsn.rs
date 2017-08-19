@@ -548,34 +548,22 @@ impl Pcb {
 
     fn component_list(&mut self, list: &Vec<Value>) -> Result<()> {
         for ele in list.iter() {
-            match ele {
-                &Value::TaggedList(_, ref list) => {
-                    let component_type = list[0].as_string()?;
-                    println!("component_type {}", component_type);
-                    for place in list.iter().skip(1) {
-                        match place {
-                            &Value::TaggedList(_, ref list) => {
-                                let name = list[0].as_string()?;
-                                let x = list[1].as_f64()?;
-                                let y = list[2].as_f64()?;
-                                //let side = list[3].as_string()?;
-                                let rotation = list[4].as_f64()?;
-                                self.components
-                                    .push(Component {
-                                              component_type: component_type.clone(),
-                                              instance_name: name.clone(),
-                                              position: geom::Location::new(geom::Vector::new(x,
-                                                                                              y),
-                                                                            rotation.to_radians()),
-                                          })
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {
-                    println!("unhandled component list entry: {:?}", ele);
-                }
+            let list = ele.as_tagged_list_with_name("component")?;
+            let component_type = list[0].as_string()?;
+            for place in list.iter().skip(1) {
+                let list = place.as_tagged_list_with_name("place")?;
+                let name = list[0].as_string()?;
+                let x = list[1].as_f64()?;
+                let y = list[2].as_f64()?;
+                //let side = list[3].as_string()?;
+                let rotation = list[4].as_f64()?;
+                self.components
+                    .push(Component {
+                              component_type: component_type.clone(),
+                              instance_name: name.clone(),
+                              position: geom::Location::new(geom::Vector::new(x, y),
+                                                            rotation.to_radians()),
+                          })
             }
         }
         Ok(())
