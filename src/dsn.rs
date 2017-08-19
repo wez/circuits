@@ -77,6 +77,16 @@ impl Value {
         }
     }
 
+    pub fn as_tagged_value(&self) -> Result<(&String, Value)> {
+        match self {
+            &Value::TaggedValue(ref tag, ref value) => {
+                let v = (**value).clone();
+                Ok((tag, v))
+            }
+            _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
+        }
+    }
+
     pub fn as_tagged_list(&self) -> Result<(&String, Vec<Value>)> {
         match self {
             &Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
@@ -214,11 +224,20 @@ pub struct Layer {
 }
 
 #[derive(Default, Debug)]
+pub struct Rule {
+    pub width: f64,
+    pub clearance: f64,
+}
+
+#[derive(Default, Debug)]
 pub struct Structure {
     pub layers: Vec<Layer>,
     pub boundary: Vec<DsnShape>,
     pub keepout: Vec<DsnShape>,
+    pub via: String,
+    pub rule: Rule,
 }
+
 
 #[derive(Debug)]
 pub struct Component {
@@ -350,28 +369,22 @@ impl Parser {
     //! parses a value list into an existing Parser object
     fn from_list(&mut self, list: &Vec<Value>) -> Result<()> {
         for ele in list.iter() {
-            match ele {
-                &Value::TaggedValue(ref k, ref v) => {
-                    match k.as_ref() {
-                        "string_quote" => {
-                            self.string_quote = v.as_string()?.clone();
-                        }
-                        "space_in_quoted_tokens" => {
-                            self.space_in_quoted_tokens = v.as_string()?.clone();
-                        }
-                        "host_cad" => {
-                            self.host_cad = v.as_string()?.clone();
-                        }
-                        "host_version" => {
-                            self.host_version = v.as_string()?.clone();
-                        }
-                        _ => {
-                            println!("unhandled key Parser::{}", k);
-                        }
-                    }
+            let (k, v) = ele.as_tagged_value()?;
+            match k.as_ref() {
+                "string_quote" => {
+                    self.string_quote = v.as_string()?.clone();
+                }
+                "space_in_quoted_tokens" => {
+                    self.space_in_quoted_tokens = v.as_string()?.clone();
+                }
+                "host_cad" => {
+                    self.host_cad = v.as_string()?.clone();
+                }
+                "host_version" => {
+                    self.host_version = v.as_string()?.clone();
                 }
                 _ => {
-                    println!("unhandled Parser::{:?}", ele);
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
         }
@@ -387,31 +400,24 @@ impl Layer {
 
         l.name = list[0].as_string()?.clone();
         for ele in list.iter().skip(1) {
-            match ele {
-                &Value::TaggedValue(ref k, ref v) => {
-                    match k.as_ref() {
-                        "type" => {
-                            l.layer_type = v.as_string()?.clone();
-                        }
-                        "property" => {
-                            match **v {
-                                Value::TaggedValue(ref name, ref val) => {
-                                    if name == "index" {
-                                        l.index = val.as_i64()?;
-                                    }
-                                }
-                                _ => {
-                                    println!("unhandled key Layer::property::{:?}", v);
-                                }
-                            }
+            let (k, v) = ele.as_tagged_value()?;
+            match k.as_ref() {
+                "type" => {
+                    l.layer_type = v.as_string()?.clone();
+                }
+                "property" => {
+                    let (name, val) = v.as_tagged_value()?;
+                    match name.as_ref() {
+                        "index" => {
+                            l.index = val.as_i64()?;
                         }
                         _ => {
-                            println!("unhandled key Layer::{}", k);
+                            return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                         }
                     }
                 }
                 _ => {
-                    println!("unhandled Layer::{:?}", ele);
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
         }
@@ -420,50 +426,58 @@ impl Layer {
     }
 }
 
+impl Rule {
+    fn from_list(list: &Vec<Value>) -> Result<Rule> {
+        let mut rule = Rule::default();
+
+        for ele in list.iter() {
+            let (tag, list) = ele.as_tagged_list()?;
+            match tag.as_ref() {
+                "width" => {
+                    rule.width = list[0].as_f64()?;
+                }
+                "clearance" => {
+                    // we ignore the variants that specify clearance for
+                    // different types.
+                    if list.len() == 1 {
+                        rule.clearance = list[0].as_f64()?;
+                    }
+                }
+                _ => {
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
+                }
+            }
+        }
+
+        Ok(rule)
+    }
+}
+
 impl Structure {
     //! parses a value list and populates an existing Structure instance
     fn from_list(&mut self, list: &Vec<Value>) -> Result<()> {
         for ele in list.iter() {
-            match ele {
-                &Value::TaggedList(ref k, ref list) => {
-                    match k.as_ref() {
-                        "layer" => {
-                            self.layers.push(Layer::from_list(list)?);
-                        }
-                        "keepout" => {
-                            match &list[1] {
-                                &Value::TaggedList(ref tag, ref list) => {
-                                    self.keepout.push(DsnShape::parse(tag, list)?);
-                                }
-                                _ => {
-                                    println!("unhandled Structure::keepout{:?}", list);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unhandled key Structure::{}", k);
-                        }
-                    }
+            let (k, list) = ele.as_tagged_list()?;
+            match k.as_ref() {
+                "layer" => {
+                    self.layers.push(Layer::from_list(&list)?);
                 }
-                &Value::TaggedValue(ref tag, ref val) => {
-                    match tag.as_ref() {
-                        "boundary" => {
-                            match &**val {
-                                &Value::TaggedList(ref tag, ref list) => {
-                                    self.boundary.push(DsnShape::parse(tag, list)?);
-                                }
-                                _ => {
-                                    println!("unhandled ele in Structure::boundary {:?}", ele);
-                                }
-                            }
-                        }
-                        _ => {
-                            println!("unhandled TaggedValue Structure::{} {:?}", tag, val);
-                        }
-                    }
+                "keepout" => {
+                    let (tag, list) = list[1].as_tagged_list()?;
+                    self.keepout.push(DsnShape::parse(tag, &list)?);
+                }
+                "boundary" => {
+                    let (tag, list) = list[0].as_tagged_list()?;
+                    self.boundary.push(DsnShape::parse(tag, &list)?);
+                }
+                "via" => {
+                    self.via = list[0].as_string()?.clone();
+                }
+                "rule" => {
+                    self.rule = Rule::from_list(&list)?;
                 }
                 _ => {
-                    println!("unhandled Structure::{:?}", ele);
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
         }
@@ -507,8 +521,11 @@ impl Pcb {
                 "unit" => {
                     pcb.unit = list[0].as_string()?.clone();
                 }
+                "resolution" | "wiring" => {
+                    // ignored
+                }
                 _ => {
-                    println!("unhandled key Pcb::{:?}", ele);
+                    return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
         }
