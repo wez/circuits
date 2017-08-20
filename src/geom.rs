@@ -62,6 +62,12 @@ impl Shape {
     }
 }
 
+impl Clone for Shape {
+    fn clone(&self) -> Shape {
+        self.translate(&origin())
+    }
+}
+
 impl ::std::fmt::Debug for Shape {
     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::result::Result<(), ::std::fmt::Error> {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {

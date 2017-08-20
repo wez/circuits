@@ -47,20 +47,40 @@ impl Features {
             }
         }
 
-        // terminals with no net are obstacles
+        // terminals with no net are obstacles, as are any explicit
+        // keepout zones designated by the pcb.
         let mut obstacles: Vec<Terminal> = Vec::new();
+
+        for shape in pcb.structure.keepout.iter() {
+            obstacles.push(Terminal {
+                               identifier: None,
+                               net_name: None,
+                               layers: HashSet::new(), // FIXME: all layers?
+                               shape: shape.shape.clone(),
+                           });
+        }
 
         // Now build the terminals from the pins in the components
         for comp in pcb.components.iter() {
             let def = &pcb.component_defs[&comp.component_type];
+
+            for out in def.keepout.iter() {
+                obstacles.push(Terminal {
+                                   identifier: None,
+                                   net_name: None,
+                                   layers: HashSet::new(), // FIXME: all layers?
+                                   shape: out.shape.translate(&comp.position),
+                               });
+            }
+
             for pin in def.pins.iter() {
                 let pad_def = &pcb.pad_defs[&pin.pad_type];
                 let mut terminal: Option<Terminal> = None;
                 let identifier = format!("{}-{}", comp.instance_name, pin.pad_num);
                 let net_name = ident_to_net.get(&identifier).map(|x| x.clone());
+                let x = comp.position * pin.position;
 
                 for (layer_name, pad_shape) in pad_def.pads.iter() {
-                    let x = comp.position * pin.position;
                     let s = pad_shape.shape.translate(&x);
 
                     let mut layers = HashSet::new();

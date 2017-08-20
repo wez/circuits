@@ -54,22 +54,20 @@ fn go() -> Result<(), Box<Error>> {
         for _ in pcb.structure.boundary.iter() {
             shape_ids.push(ids.next());
         }
-        for _ in pcb.structure.keepout.iter() {
-            shape_ids.push(ids.next());
-        }
         for comp in pcb.components.iter() {
             let def = &pcb.component_defs[&comp.component_type];
 
             for _ in def.outlines.iter() {
                 shape_ids.push(ids.next());
             }
-            for _ in def.keepout.iter() {
+
+            for _ in features.obstacles.iter() {
                 shape_ids.push(ids.next());
             }
-
-            for _ in def.pins.iter() {
-                shape_ids.push(ids.next());
-                shape_ids.push(ids.next());
+            for (_, terminals) in features.terminals_by_net.iter() {
+                for _ in terminals.iter() {
+                    shape_ids.push(ids.next());
+                }
             }
         }
         (canvas, grid, shape_ids)
@@ -228,11 +226,6 @@ fn go() -> Result<(), Box<Error>> {
                 render_shape(&shape.shape, color::LIGHT_BLUE);
             }
 
-            // keep out in red
-            for shape in pcb.structure.keepout.iter() {
-                render_shape(&shape.shape, color::RED);
-            }
-
             // components
             for comp in pcb.components.iter() {
                 let def = &pcb.component_defs[&comp.component_type];
@@ -241,18 +234,15 @@ fn go() -> Result<(), Box<Error>> {
                     let s = outline.shape.translate(&comp.position);
                     render_shape(&s, color::DARK_GREEN);
                 }
-                for out in def.keepout.iter() {
-                    let s = out.shape.translate(&comp.position);
-                    render_shape(&s, color::RED);
-                }
+            }
 
-                for pin in def.pins.iter() {
-                    let pad_def = &pcb.pad_defs[&pin.pad_type];
-                    for (_, pad_shape) in pad_def.pads.iter() {
-                        let x = comp.position * pin.position;
-                        let s = pad_shape.shape.translate(&x);
-                        render_shape(&s, color::YELLOW);
-                    }
+            for obs in features.obstacles.iter() {
+                render_shape(&obs.shape, color::RED);
+            }
+
+            for (_, terminals) in features.terminals_by_net.iter() {
+                for t in terminals.iter() {
+                    render_shape(&t.shape, color::YELLOW);
                 }
             }
         }
