@@ -14,6 +14,12 @@ pub fn origin() -> Location {
     Location::new(Vector::new(0.0, 0.0), na::zero())
 }
 
+/// Returns the rectilinear or manhattan distance between
+/// two points.
+pub fn manhattan_distance(a: &Point, b: &Point) -> f64 {
+    (a.coords.x - b.coords.x).abs() + (a.coords.y - b.coords.y).abs()
+}
+
 pub struct Shape {
     pub handle: ShapeHandle,
     pub location: Location,

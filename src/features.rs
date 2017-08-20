@@ -116,7 +116,7 @@ impl Features {
 
         let mut twonets_by_net = HashMap::new();
         for (netname, mut terminals) in by_net.iter_mut() {
-            let tnets = twonets::compute_2nets(&mut terminals);
+            let tnets = twonets::compute_2nets(netname, &mut terminals);
             twonets_by_net.insert(netname.clone(), tnets);
         }
 
