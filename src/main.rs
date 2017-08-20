@@ -8,10 +8,12 @@ extern crate nom;
 extern crate itertools;
 extern crate ncollide;
 extern crate conrod;
+extern crate petgraph;
 
 mod dsn;
 mod geom;
 mod features;
+mod twonets;
 
 use std::error::Error;
 use self::dsn::Pcb;
@@ -66,6 +68,11 @@ fn go() -> Result<(), Box<Error>> {
             }
             for (_, terminals) in features.terminals_by_net.iter() {
                 for _ in terminals.iter() {
+                    shape_ids.push(ids.next());
+                }
+            }
+            for (_, twonets) in features.twonets_by_net.iter() {
+                for _ in twonets.iter() {
                     shape_ids.push(ids.next());
                 }
             }
@@ -243,6 +250,18 @@ fn go() -> Result<(), Box<Error>> {
             for (_, terminals) in features.terminals_by_net.iter() {
                 for t in terminals.iter() {
                     render_shape(&t.shape, color::YELLOW);
+                }
+            }
+
+            for (netname, twonets) in features.twonets_by_net.iter() {
+                let terminals = &features.terminals_by_net[netname];
+                for &(a_index, b_index) in twonets.iter() {
+                    let a = &terminals[a_index];
+                    let b = &terminals[b_index];
+
+                    let points = vec![a.shape.aabb().center(), b.shape.aabb().center()];
+                    let poly = geom::Shape::polygon(points, geom::origin(), None);
+                    render_shape(&poly, color::LIGHT_PURPLE);
                 }
             }
         }

@@ -1,8 +1,9 @@
 use dsn;
 use geom;
 use std::collections::{HashMap, HashSet};
+use twonets;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Terminal {
     // name of this terminal (assuming it is a pin on a component)
     pub identifier: Option<String>,
@@ -21,6 +22,7 @@ pub struct Terminal {
 pub struct Features {
     pub terminals_by_net: HashMap<String, Vec<Terminal>>,
     pub obstacles: Vec<Terminal>,
+    pub twonets_by_net: HashMap<String, Vec<(usize, usize)>>,
 }
 
 impl Terminal {
@@ -112,9 +114,16 @@ impl Features {
             }
         }
 
+        let mut twonets_by_net = HashMap::new();
+        for (netname, mut terminals) in by_net.iter_mut() {
+            let tnets = twonets::compute_2nets(&mut terminals);
+            twonets_by_net.insert(netname.clone(), tnets);
+        }
+
         Features {
             terminals_by_net: by_net,
             obstacles: obstacles,
+            twonets_by_net: twonets_by_net,
         }
     }
 }

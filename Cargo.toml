@@ -8,12 +8,12 @@ error-chain = "0.10.0"
 itertools = "0.6.1"
 nalgebra = "0.12.3"
 ncollide = "0.12.0"
+petgraph = "0.4.5"
 
 [dependencies.conrod]
-version = "0.54.0"
 features = ["glium", "winit"]
+version = "0.54.0"
 
 [dependencies.nom]
 features = ["verbose-errors"]
 version = "3.2.0"
-
