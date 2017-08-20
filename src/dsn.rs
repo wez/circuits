@@ -187,14 +187,14 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DsnShape {
     pub layer: String,
     pub shape: geom::Shape,
 }
 
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Parser {
     pub string_quote: String,
     pub space_in_quoted_tokens: String,
@@ -202,20 +202,20 @@ pub struct Parser {
     pub host_version: String,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Layer {
     pub name: String,
     pub layer_type: String,
     pub index: i64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Rule {
     pub width: f64,
     pub clearance: f64,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Structure {
     pub layers: Vec<Layer>,
     pub boundary: Vec<DsnShape>,
@@ -225,28 +225,28 @@ pub struct Structure {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Component {
     pub component_type: String,
     pub instance_name: String,
     pub position: geom::Location,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct PadStack {
     pub pad_type: String,
     pub pads: HashMap<String, DsnShape>,
     pub attach: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pin {
     pub pad_type: String,
     pub pad_num: i64,
     pub position: geom::Location,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct ComponentDef {
     pub component_type: String,
     pub outlines: Vec<DsnShape>,
@@ -254,18 +254,18 @@ pub struct ComponentDef {
     pub keepout: Vec<DsnShape>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Net {
     pub pins: Vec<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct NetClass {
     pub class_name: String,
     pub nets: HashSet<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Pcb {
     pub file_name: String,
     pub parser: Parser,
