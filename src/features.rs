@@ -41,6 +41,11 @@ impl Features {
         let mut ident_to_net = HashMap::new();
         let mut by_net: HashMap<String, Vec<Terminal>> = HashMap::new();
 
+        let mut all_layers = HashSet::new();
+        for layer in pcb.structure.layers.iter() {
+            all_layers.insert(layer.name.clone());
+        }
+
         for (netname, net) in pcb.networks.iter() {
             by_net.insert(netname.clone(), Vec::new());
 
@@ -57,7 +62,7 @@ impl Features {
             obstacles.push(Terminal {
                                identifier: None,
                                net_name: None,
-                               layers: HashSet::new(), // FIXME: all layers?
+                               layers: all_layers.clone(),
                                shape: shape.shape.clone(),
                            });
         }
@@ -70,7 +75,7 @@ impl Features {
                 obstacles.push(Terminal {
                                    identifier: None,
                                    net_name: None,
-                                   layers: HashSet::new(), // FIXME: all layers?
+                                   layers: all_layers.clone(),
                                    shape: out.shape.translate(&comp.position),
                                });
             }
@@ -116,7 +121,7 @@ impl Features {
 
         let mut twonets_by_net = HashMap::new();
         for (netname, mut terminals) in by_net.iter_mut() {
-            let tnets = twonets::compute_2nets(netname, &mut terminals);
+            let tnets = twonets::compute_2nets(netname, &mut terminals, &all_layers);
             twonets_by_net.insert(netname.clone(), tnets);
         }
 

@@ -55,7 +55,10 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
 /// input list of terminals.
 /// The return value is a list of tuples holding the indices
 /// in `terminals` of connected pairs.
-pub fn compute_2nets(net_name: &String, terminals: &mut Vec<Terminal>) -> Vec<(usize, usize)> {
+pub fn compute_2nets(net_name: &String,
+                     terminals: &mut Vec<Terminal>,
+                     all_layers: &HashSet<String>)
+                     -> Vec<(usize, usize)> {
     let mut terminal_points = Vec::new();
     for t in terminals.iter() {
         terminal_points.push(t.shape.aabb().center());
@@ -162,7 +165,7 @@ pub fn compute_2nets(net_name: &String, terminals: &mut Vec<Terminal>) -> Vec<(u
             .push(Terminal {
                       identifier: None,
                       net_name: Some(net_name.clone()),
-                      layers: HashSet::new(),
+                      layers: all_layers.clone(),
                       shape:
                           geom::Shape::circle(200.0,
                                               geom::Location::new(geom::Vector::new(pt.coords.x,

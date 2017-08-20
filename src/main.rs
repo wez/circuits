@@ -22,7 +22,6 @@ fn go() -> Result<(), Box<Error>> {
     let pcb = Pcb::parse("left-pcb-no-fill.dsn")?;
     // println!("made pcb: {:#?}", pcb);
     let features = features::Features::from_pcb(&pcb);
-    println!("terminals: {:#?}", features.terminals_by_net);
 
     use conrod;
     use conrod::backend::glium::glium::{self, Surface};
