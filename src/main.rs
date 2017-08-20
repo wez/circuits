@@ -5,19 +5,21 @@ use std::process::exit;
 #[macro_use]
 extern crate nom;
 
+extern crate clap;
+extern crate conrod;
 extern crate itertools;
 extern crate ncollide;
-extern crate conrod;
 extern crate petgraph;
 
 mod dsn;
-mod geom;
 mod features;
+mod geom;
 mod twonets;
 
 use conrod::backend::glium::glium::{self, Surface};
 use std::sync::mpsc;
 use std::thread;
+use clap::{App, Arg};
 
 const WIDTH: u32 = 700;
 const HEIGHT: u32 = 700;
@@ -334,7 +336,18 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 }
 
 fn go() -> Result<(), Box<Error>> {
-    let pcb = Pcb::parse("left-pcb-no-fill.dsn")?;
+    let args = App::new("pcbautorouter")
+        .author("Wez Furlong")
+        .version("0.0.1")
+        .about("Solves pcb track routing")
+        .arg(Arg::with_name("dsn")
+                 .help("path to specctra design file")
+                 .long("dsn")
+                 .takes_value(true)
+                 .required(true))
+        .get_matches();
+
+    let pcb = Pcb::parse(args.value_of("dsn").unwrap())?;
 
     let (tx, rx) = mpsc::channel();
     let mut events_loop = glium::glutin::EventsLoop::new();
