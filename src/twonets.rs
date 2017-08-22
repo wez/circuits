@@ -4,17 +4,23 @@ use petgraph::data::FromElements;
 use features::Terminal;
 use itertools::Itertools;
 use geom;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 extern crate nalgebra as na;
+
+// TODO: consider http://vlsicad.ucsd.edu/Publications/Conferences/142/c142.ps
 
 type MSTGraph = UnGraph<usize, f64>;
 
 fn compute_mst(points: &Vec<geom::Point>) -> MSTGraph {
     let mut g = MSTGraph::new_undirected();
-    let mut indices = Vec::new();
+
+    // Add nodes to the graph and record the node indices;
+    // indices maps the point index to a node index.
+    let mut indices = Vec::with_capacity(points.len());
     for (idx, _) in points.iter().enumerate() {
         indices.push(g.add_node(idx));
     }
+
     for (a, b) in indices.iter().tuple_combinations() {
         let a_point = points[g[*a]];
         let b_point = points[g[*b]];
@@ -38,13 +44,9 @@ fn mst_cost(g: &MSTGraph) -> f64 {
 fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
     let mut hanan = Vec::new();
 
-    for (i, i_point) in points.iter().enumerate() {
-        for (j, j_point) in points.iter().enumerate() {
-            if i != j {
-                hanan.push(geom::Point::new(i_point.coords.x, j_point.coords.y));
-                hanan.push(geom::Point::new(j_point.coords.x, i_point.coords.y));
-            }
-        }
+    for (i_point, j_point) in points.iter().tuple_combinations() {
+        hanan.push(geom::Point::new(i_point.coords.x, j_point.coords.y));
+        hanan.push(geom::Point::new(j_point.coords.x, i_point.coords.y));
     }
 
     hanan
@@ -66,6 +68,7 @@ pub fn compute_2nets(net_name: &String,
 
     // Use the minimum rectilinear spanning tree as a starting point
     let mut mst = compute_mst(&terminal_points);
+    let h_grid = hanan_grid(&terminal_points);
     loop {
         let base_cost = mst_cost(&mst);
 
@@ -74,12 +77,11 @@ pub fn compute_2nets(net_name: &String,
         // Now compute candidate locations for steiner points and evaluate
         // whether adding a candidate would reduce the cost of the mst.
         // We use the hanan grid for the candidate locations.
-        for hanan_pt in hanan_grid(&terminal_points) {
-            let mut candidate_points = Vec::with_capacity(terminal_points.len() + 1);
-            for p in terminal_points.iter() {
-                candidate_points.push(p.clone());
-            }
-            candidate_points.push(hanan_pt);
+        let mut candidate_points = Vec::with_capacity(terminal_points.len() + 1);
+        for hanan_pt in h_grid.iter() {
+            candidate_points.clear();
+            candidate_points.extend_from_slice(&terminal_points[..]);
+            candidate_points.push(*hanan_pt);
 
             let g = compute_mst(&candidate_points);
             let cost = mst_cost(&g);
@@ -87,11 +89,11 @@ pub fn compute_2nets(net_name: &String,
             if cost < base_cost {
                 match best {
                     None => {
-                        best = Some((cost, candidate_points, g));
+                        best = Some((cost, candidate_points.clone(), g));
                     }
                     Some((best_cost, _, _)) => {
                         if cost < best_cost {
-                            best = Some((cost, candidate_points, g));
+                            best = Some((cost, candidate_points.clone(), g));
                         }
                     }
                 }
@@ -107,35 +109,16 @@ pub fn compute_2nets(net_name: &String,
         let (_, candidate_points, g) = best.unwrap();
 
         // prune out points that are no longer used
-        let mut points = Vec::new();
+        let mut points = Vec::with_capacity(terminals.len() * 2);
 
         // We always want the input terminals
-        for (idx, _) in terminals.iter().enumerate() {
-            if idx >= terminals.len() {
-                break;
-            }
-            points.push(terminal_points[idx].clone());
-        }
+        points.extend_from_slice(&terminal_points[0..terminals.len()]);
 
         // We only want to preserve useful steiner points.  Those
         // are points that have a number of edges > 2.
-        // This map is used to count the edge degree.
-        let mut extras: HashMap<usize, usize> = HashMap::new();
-        let bump = |extras: &mut HashMap<usize, usize>, idx: usize| if idx >= terminals.len() {
-            let degree = extras.get(&idx).unwrap_or(&0) + 1;
-            extras.insert(idx, degree);
-        };
-
-        for edge in g.edge_indices() {
-            if let Some((a, b)) = g.edge_endpoints(edge) {
-                bump(&mut extras, g[a]);
-                bump(&mut extras, g[b]);
-            }
-        }
-
-        for (idx, degree) in extras {
-            if degree > 2 {
-                // Keep the useful steiner points
+        for a in g.node_indices() {
+            let idx = g[a];
+            if idx >= terminals.len() && g.edges(a).count() > 2 {
                 points.push(candidate_points[idx].clone());
             }
         }
