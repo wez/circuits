@@ -2,6 +2,15 @@ use dsn;
 use geom;
 use std::collections::{HashMap, HashSet};
 use twonets;
+use std::sync::Arc;
+
+pub type LayerSet = HashSet<u8>;
+
+pub fn layer_set_from_layer(layer: usize) -> LayerSet {
+    let mut set = LayerSet::new();
+    set.insert(layer as u8);
+    set
+}
 
 #[derive(Clone, Debug)]
 pub struct Terminal {
@@ -12,17 +21,20 @@ pub struct Terminal {
     pub net_name: Option<String>,
 
     // which layers this terminal is connected to
-    pub layers: HashSet<String>,
+    pub layers: LayerSet,
 
     // footprint of the terminal
     pub shape: geom::Shape,
+
+    // center point of the terminal
+    pub point: geom::Point,
 }
 
 #[derive(Debug)]
 pub struct Features {
-    pub terminals_by_net: HashMap<String, Vec<Terminal>>,
-    pub obstacles: Vec<Terminal>,
-    pub twonets_by_net: HashMap<String, Vec<(usize, usize)>>,
+    pub terminals_by_net: HashMap<String, Vec<Arc<Terminal>>>,
+    pub obstacles: Vec<Arc<Terminal>>,
+    pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
 }
 
 impl Terminal {
@@ -33,18 +45,38 @@ impl Terminal {
     }
 }
 
+fn check_layer_contig(layers: &LayerSet) {
+    let mut layer_vec = Vec::with_capacity(layers.len());
+    for layer_idx in layers.iter() {
+        layer_vec.push(*layer_idx);
+    }
+    layer_vec.sort();
+    for (idx, layer_idx) in layer_vec.iter().enumerate() {
+        if idx as u8 != *layer_idx {
+            panic!("layer indices must be contiguous and start at 0.  Have {:?}",
+                   layers);
+        }
+    }
+}
+
 impl Features {
     // Extract a list of terminals from a pcb
     pub fn from_pcb(pcb: &dsn::Pcb) -> Features {
         // First build the map of ident -> netname by inverting the
         // mapping described by the pcb structure
         let mut ident_to_net = HashMap::new();
-        let mut by_net: HashMap<String, Vec<Terminal>> = HashMap::new();
+        let mut by_net: HashMap<String, Vec<Arc<Terminal>>> = HashMap::new();
 
-        let mut all_layers = HashSet::new();
+        let mut all_layers = LayerSet::new();
+        let mut layer_name_to_index = HashMap::new();
         for layer in pcb.structure.layers.iter() {
-            all_layers.insert(layer.name.clone());
+            all_layers.insert(layer.index as u8);
+            layer_name_to_index.insert(layer.name.clone(), layer.index as u8);
         }
+
+        // We make the assumption that the layer indices are sequential,
+        // contiguous and start with 0 elsewhere, so let's check that here.
+        check_layer_contig(&all_layers);
 
         for (netname, net) in pcb.networks.iter() {
             by_net.insert(netname.clone(), Vec::new());
@@ -56,15 +88,16 @@ impl Features {
 
         // terminals with no net are obstacles, as are any explicit
         // keepout zones designated by the pcb.
-        let mut obstacles: Vec<Terminal> = Vec::new();
+        let mut obstacles = Vec::new();
 
         for shape in pcb.structure.keepout.iter() {
-            obstacles.push(Terminal {
-                               identifier: None,
-                               net_name: None,
-                               layers: all_layers.clone(),
-                               shape: shape.shape.clone(),
-                           });
+            obstacles.push(Arc::new(Terminal {
+                                        identifier: None,
+                                        net_name: None,
+                                        layers: all_layers.clone(),
+                                        shape: shape.shape.clone(),
+                                        point: shape.shape.aabb().center(),
+                                    }));
         }
 
         // Now build the terminals from the pins in the components
@@ -72,12 +105,13 @@ impl Features {
             let def = &pcb.component_defs[&comp.component_type];
 
             for out in def.keepout.iter() {
-                obstacles.push(Terminal {
-                                   identifier: None,
-                                   net_name: None,
-                                   layers: all_layers.clone(),
-                                   shape: out.shape.translate(&comp.position),
-                               });
+                obstacles.push(Arc::new(Terminal {
+                                            identifier: None,
+                                            net_name: None,
+                                            layers: all_layers.clone(),
+                                            shape: out.shape.translate(&comp.position),
+                                            point: out.shape.aabb().center(),
+                                        }));
             }
 
             for pin in def.pins.iter() {
@@ -90,13 +124,14 @@ impl Features {
                 for (layer_name, pad_shape) in pad_def.pads.iter() {
                     let s = pad_shape.shape.translate(&x);
 
-                    let mut layers = HashSet::new();
-                    layers.insert(layer_name.clone());
+                    let mut layers = LayerSet::new();
+                    layers.insert(layer_name_to_index[layer_name]);
 
                     let mut t = Terminal {
                         identifier: Some(identifier.clone()),
                         net_name: net_name.clone(),
                         layers: layers,
+                        point: s.aabb().center(),
                         shape: s,
                     };
 
@@ -110,10 +145,10 @@ impl Features {
                     let t = terminal.unwrap();
                     if let Some(net) = net_name {
                         if let Some(v) = by_net.get_mut(&net) {
-                            v.push(t);
+                            v.push(Arc::new(t));
                         }
                     } else {
-                        obstacles.push(t);
+                        obstacles.push(Arc::new(t));
                     }
                 }
             }

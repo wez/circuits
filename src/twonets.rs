@@ -1,10 +1,10 @@
 use petgraph::algo::min_spanning_tree;
 use petgraph::graph::UnGraph;
 use petgraph::data::FromElements;
-use features::Terminal;
+use features::{LayerSet, Terminal};
 use itertools::Itertools;
 use geom;
-use std::collections::HashSet;
+use std::sync::Arc;
 extern crate nalgebra as na;
 
 // TODO: consider http://vlsicad.ucsd.edu/Publications/Conferences/142/c142.ps
@@ -58,9 +58,9 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
 /// The return value is a list of tuples holding the indices
 /// in `terminals` of connected pairs.
 pub fn compute_2nets(net_name: &String,
-                     terminals: &mut Vec<Terminal>,
-                     all_layers: &HashSet<String>)
-                     -> Vec<(usize, usize)> {
+                     terminals: &mut Vec<Arc<Terminal>>,
+                     all_layers: &LayerSet)
+                     -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
     let mut terminal_points = Vec::new();
     for t in terminals.iter() {
         terminal_points.push(t.shape.aabb().center());
@@ -133,19 +133,11 @@ pub fn compute_2nets(net_name: &String,
         }
     }
 
-    let mut twonets = Vec::new();
-
-    for edge in mst.edge_indices() {
-        if let Some((a, b)) = mst.edge_endpoints(edge) {
-            twonets.push((mst[a], mst[b]));
-        }
-    }
-
     // Add any steiner points that we created back into the set
     // of terminals.
     for pt in terminal_points.iter().skip(terminals.len()) {
         terminals
-            .push(Terminal {
+            .push(Arc::new(Terminal {
                       identifier: None,
                       net_name: Some(net_name.clone()),
                       layers: all_layers.clone(),
@@ -154,7 +146,16 @@ pub fn compute_2nets(net_name: &String,
                                               geom::Location::new(geom::Vector::new(pt.coords.x,
                                                                                     pt.coords.y),
                                                                   0.0)),
-                  });
+                                                                  point: *pt,
+                  }));
+    }
+
+    let mut twonets = Vec::new();
+
+    for edge in mst.edge_indices() {
+        if let Some((a, b)) = mst.edge_endpoints(edge) {
+            twonets.push((Arc::clone(&terminals[mst[a]]), Arc::clone(&terminals[mst[b]])));
+        }
     }
 
     twonets
