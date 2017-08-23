@@ -3,14 +3,10 @@ use geom;
 use std::collections::{HashMap, HashSet};
 use twonets;
 use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use ordered_float::OrderedFloat;
 
 pub type LayerSet = HashSet<u8>;
-
-pub fn layer_set_from_layer(layer: usize) -> LayerSet {
-    let mut set = LayerSet::new();
-    set.insert(layer as u8);
-    set
-}
 
 #[derive(Clone, Debug)]
 pub struct Terminal {
@@ -30,11 +26,37 @@ pub struct Terminal {
     pub point: geom::Point,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Features {
     pub terminals_by_net: HashMap<String, Vec<Arc<Terminal>>>,
     pub obstacles: Vec<Arc<Terminal>>,
     pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
+    pub all_layers: LayerSet,
+}
+
+impl Eq for Terminal {}
+
+impl PartialEq for Terminal {
+    // Note: we are not including the actual shape in equality tests because
+    // the shapehandle does not define equality methods we can use.  We are
+    // relying on the terminals not having the same point coordinates.
+    fn eq(&self, other: &Terminal) -> bool {
+        self.identifier == other.identifier && self.net_name == other.net_name &&
+        self.layers == other.layers &&
+        OrderedFloat(self.point.coords.x) == OrderedFloat(self.point.coords.y)
+    }
+}
+
+impl Hash for Terminal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identifier.hash(state);
+        self.net_name.hash(state);
+        OrderedFloat(self.point.coords.x).hash(state);
+        OrderedFloat(self.point.coords.y).hash(state);
+        for l in self.layers.iter() {
+            l.hash(state);
+        }
+    }
 }
 
 impl Terminal {
@@ -44,6 +66,7 @@ impl Terminal {
         self.layers = self.layers.union(&other.layers).cloned().collect();
     }
 }
+
 
 fn check_layer_contig(layers: &LayerSet) {
     let mut layer_vec = Vec::with_capacity(layers.len());
@@ -164,6 +187,7 @@ impl Features {
             terminals_by_net: by_net,
             obstacles: obstacles,
             twonets_by_net: twonets_by_net,
+            all_layers: all_layers,
         }
     }
 }

@@ -10,10 +10,12 @@ extern crate conrod;
 extern crate itertools;
 extern crate ncollide;
 extern crate petgraph;
+extern crate ordered_float;
 
 mod dsn;
 mod features;
 mod geom;
+mod layerassign;
 mod twonets;
 
 use conrod::backend::glium::glium::{self, Surface};
@@ -328,7 +330,17 @@ impl Notify {
 /// update the UI as we compute the data.
 fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let features = features::Features::from_pcb(&pcb);
-    notifier.send(ProgressUpdate::Feature(features));
+    notifier.send(ProgressUpdate::Feature(features.clone()));
+    println!("building layer assignment graphs");
+
+    let mut cfg = layerassign::Configuration::default();
+    for (_, twonets) in features.twonets_by_net.iter() {
+        for &(ref a, ref b) in twonets {
+            cfg.add_twonet(a, b, &features.all_layers);
+        }
+    }
+
+    println!("graphs built");
 }
 
 fn go() -> Result<(), Box<Error>> {
