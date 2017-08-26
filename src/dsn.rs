@@ -280,9 +280,9 @@ pub struct Pcb {
 
 impl DsnShape {
     //! parses a tagged list into a shape instance
-    fn parse(tag: &String, list: &Vec<Value>) -> Result<DsnShape> {
+    fn parse(tag: &String, list: &Vec<Value>, drill: bool) -> Result<DsnShape> {
         match tag.as_ref() {
-            "path" | "polygon" => DsnShape::parse_path(list),
+            "path" | "polygon" => DsnShape::parse_path(list, drill),
             "circle" => DsnShape::parse_circle(list),
             "rect" => DsnShape::parse_rect(list),
             _ => Err(ErrorKind::UnhandledShapeType(tag.to_string()).into()),
@@ -308,12 +308,10 @@ impl DsnShape {
            })
     }
 
-    fn parse_path(list: &Vec<Value>) -> Result<DsnShape> {
+    fn parse_path(list: &Vec<Value>, drill: bool) -> Result<DsnShape> {
         let layer = list[0].as_string()?;
 
         let mut points = Vec::new();
-        // skip 2 because 0 is the layer that we parsed and index 1 is
-        // the aperture width.
         let aperture = list[1].as_f64()? / 2.0;
         let width = if aperture == 0.0 {
             None
@@ -321,8 +319,22 @@ impl DsnShape {
             Some(aperture)
         };
 
+        // skip 2 because 0 is the layer that we parsed and index 1 is
+        // the aperture width which we extract above.
         for (x, y) in list.iter().skip(2).tuples() {
             points.push(geom::Point::new(x.as_f64()?, y.as_f64()?));
+        }
+
+        if drill && points.len() == 2 {
+            if let Some(width) = width {
+                return Ok(DsnShape {
+                              layer: layer.clone(),
+                              shape: geom::Shape::capsule(width,
+                                                          &points[0],
+                                                          &points[1],
+                                                          geom::origin()),
+                          });
+            }
         }
 
         Ok(DsnShape {
@@ -453,11 +465,11 @@ impl Structure {
                 }
                 "keepout" => {
                     let (tag, list) = list[1].as_tagged_list()?;
-                    s.keepout.push(DsnShape::parse(tag, &list)?);
+                    s.keepout.push(DsnShape::parse(tag, &list, false)?);
                 }
                 "boundary" => {
                     let (tag, list) = list[0].as_tagged_list()?;
-                    s.boundary.push(DsnShape::parse(tag, &list)?);
+                    s.boundary.push(DsnShape::parse(tag, &list, false)?);
                 }
                 "via" => {
                     s.via = list[0].as_string()?.clone();
@@ -585,7 +597,7 @@ impl Pcb {
             match tag.as_ref() {
                 "shape" => {
                     let (t, l) = list[0].as_tagged_list()?;
-                    let shape = DsnShape::parse(t, &l)?;
+                    let shape = DsnShape::parse(t, &l, true)?;
                     def.pads.insert(shape.layer.clone(), shape);
                 }
                 "attach" => {
@@ -613,14 +625,14 @@ impl Pcb {
             match tagname.as_ref() {
                 "outline" => {
                     let (t, l) = list[0].as_tagged_list()?;
-                    def.outlines.push(DsnShape::parse(t, &l)?);
+                    def.outlines.push(DsnShape::parse(t, &l, false)?);
                 }
                 "pin" => {
                     def.pins.push(self.parse_pin(&list)?);
                 }
                 "keepout" => {
                     let (t, l) = list[1].as_tagged_list()?;
-                    def.keepout.push(DsnShape::parse(t, &l)?);
+                    def.keepout.push(DsnShape::parse(t, &l, false)?);
                 }
                 _ => {
                     return Err(ErrorKind::UnexpectedValue(ele.clone()).into());

@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate error_chain;
+#[macro_use]
+extern crate maplit;
 use std::process::exit;
 
 #[macro_use]
@@ -7,6 +9,7 @@ extern crate nom;
 
 extern crate clap;
 extern crate conrod;
+extern crate geo;
 extern crate itertools;
 extern crate ncollide;
 extern crate petgraph;
@@ -158,43 +161,35 @@ fn build_ui(pcb: &Pcb,
 
         let mut i = first_shape_id;
         let mut render_shape = |shape: &geom::Shape, color: conrod::Color| {
-            let xlate = scale * shape.location;
+            let shape = shape.transform(&scale);
 
-            if let Some(poly) = shape.handle.as_shape::<geom::Polyline>() {
-                let mut points = Vec::new();
+            let poly = shape
+                .handle
+                .as_shape::<geom::Polyline>()
+                .expect("transform always yields a polygon!?");
 
-                for p in poly.vertices().iter() {
-                    let tp = xlate * p;
-                    points.push([tp.coords.x, tp.coords.y]);
+            let points: Vec<_> = poly.vertices()
+                .iter()
+                .map(|p| [p.coords.x, p.coords.y])
+                .collect();
+
+            let style = match shape.width {
+                Some(width) => {
+                    // This doesn't render exactly how I'd like; what
+                    // we really want here is to render the minkowski
+                    // sum of a circle with the specified width walked
+                    // along the described path, because that is how
+                    // the pad is going to be drilled out on the pcb
+                    widget::primitive::line::Style::new().thickness(width)
                 }
+                None => widget::primitive::line::Style::new(),
+            };
 
-                let style = match shape.width {
-                    Some(width) => {
-                        // This doesn't render exactly how I'd like; what
-                        // we really want here is to render the minkowski
-                        // sum of a circle with the specified width walked
-                        // along the described path, because that is how
-                        // the pad is going to be drilled out on the pcb
-                        widget::primitive::line::Style::new().thickness(width * xlate.scaling())
-                    }
-                    None => widget::primitive::line::Style::new(),
-                };
-
-                widget::PointPath::styled(points, style)
-                    .color(color)
-                    .middle_of(canvas)
-                    .set(shape_ids[i], ui);
-                i = i + 1;
-            } else if let Some(circle) = shape.handle.as_shape::<geom::Circle>() {
-                let p = xlate * geom::Point::new(0.0, 0.0);
-                let r = xlate.scaling() * circle.radius();
-
-                widget::Circle::outline(r)
-                    .color(color)
-                    .xy([p.coords.x, p.coords.y])
-                    .set(shape_ids[i], ui);
-                i = i + 1;
-            }
+            widget::PointPath::styled(points, style)
+                .color(color)
+                .middle_of(canvas)
+                .set(shape_ids[i], ui);
+            i = i + 1;
         };
 
         // boundary in light blue
@@ -333,10 +328,10 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     notifier.send(ProgressUpdate::Feature(features.clone()));
     println!("building layer assignment graphs");
 
-    let mut cfg = layerassign::Configuration::default();
+    let mut cfg = layerassign::Configuration::new(&features.all_layers);
     for (_, twonets) in features.twonets_by_net.iter() {
         for &(ref a, ref b) in twonets {
-            cfg.add_twonet(a, b, &features.all_layers);
+            cfg.add_twonet(a, b);
         }
     }
 
