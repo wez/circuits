@@ -10,6 +10,7 @@ extern crate nom;
 extern crate clap;
 extern crate conrod;
 extern crate geo;
+extern crate indicatif;
 extern crate itertools;
 extern crate ncollide;
 extern crate petgraph;
@@ -20,6 +21,8 @@ mod features;
 mod geom;
 mod layerassign;
 mod twonets;
+mod progress;
+use progress::Progress;
 
 use conrod::backend::glium::glium::{self, Surface};
 use std::sync::mpsc;
@@ -257,7 +260,6 @@ fn gui_loop(pcb: &Pcb,
                 if let Ok(progress) = rx.try_recv() {
                     match progress {
                         ProgressUpdate::Feature(f) => {
-                            println!("updated features");
                             features = Some(f);
                         }
                     }
@@ -326,16 +328,19 @@ impl Notify {
 fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let features = features::Features::from_pcb(&pcb);
     notifier.send(ProgressUpdate::Feature(features.clone()));
-    println!("building layer assignment graphs");
 
-    let mut cfg = layerassign::Configuration::new(&features.all_layers);
-    for (_, twonets) in features.twonets_by_net.iter() {
-        for &(ref a, ref b) in twonets {
-            cfg.add_twonet(a, b);
+    {
+        let pb = Progress::new("building layer assignment graphs",
+                               features.twonets_by_net.len());
+
+        let mut cfg = layerassign::Configuration::new(&features.all_layers);
+        for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
+            for &(ref a, ref b) in twonets {
+                cfg.add_twonet(a, b);
+            }
         }
     }
 
-    println!("graphs built");
 }
 
 fn go() -> Result<(), Box<Error>> {
