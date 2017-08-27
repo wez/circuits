@@ -16,6 +16,7 @@ extern crate ncollide;
 extern crate petgraph;
 extern crate ordered_float;
 
+mod dijkstra;
 mod dsn;
 mod features;
 mod geom;
@@ -329,17 +330,20 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let features = features::Features::from_pcb(&pcb);
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
+    let mut cfg = layerassign::Configuration::new(&features.all_layers);
+
     {
         let pb = Progress::new("building layer assignment graphs",
                                features.twonets_by_net.len());
 
-        let mut cfg = layerassign::Configuration::new(&features.all_layers);
         for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
             for &(ref a, ref b) in twonets {
                 cfg.add_twonet(a, b);
             }
         }
     }
+
+    cfg.initial_assignment();
 
 }
 

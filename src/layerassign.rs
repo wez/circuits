@@ -11,9 +11,14 @@ extern crate ncollide;
 use ncollide::query;
 extern crate nalgebra as na;
 use std::sync::Arc;
+use std::{thread, time};
+use dijkstra::shortest_path;
+
+use progress::Progress;
 
 pub type TerminalId = usize;
 const NUM_VIAS: usize = 3;
+const ALPHA: f64 = 0.1;
 
 #[derive(Debug, Clone)]
 pub struct TerminalInfo {
@@ -60,6 +65,14 @@ impl Node {
 
     fn via(terminal_id: TerminalId, layer: usize) -> Node {
         Node::Via(TerminalOnLayer::new(terminal_id, layer))
+    }
+
+    fn as_terminal_on_layer(&self) -> Option<TerminalOnLayer> {
+        match self {
+            &Node::Terminal(tol) => Some(tol),
+            &Node::Via(tol) => Some(tol),
+            _ => None,
+        }
     }
 }
 
@@ -273,22 +286,31 @@ impl PathEdge {
     }
 }
 
+
+
 pub type AssignGraphMap = DiGraphMap<Node, PathEdge>;
 
 #[derive(Debug, Clone)]
 struct TwoNet {
     graph: AssignGraphMap,
+    src: TerminalId,
+    sink: TerminalId,
 }
+pub type TwoNetId = usize;
 
 #[derive(Debug, Default)]
 pub struct Configuration {
     // map constant terminal info to the mutable (within
     // this configuration instance) node info.
-    terminals: HashMap<Arc<Terminal>, TerminalInfo>,
+    terminals: HashMap<*const Terminal, TerminalInfo>,
     terminal_by_id: HashMap<TerminalId, Arc<Terminal>>,
+
+    // Indices are referenced via TwoNetId
     two_nets: Vec<TwoNet>,
     all_layers: LayerSet,
     components: Vec<ComponentList>,
+
+    assignment: Vec<(TwoNetId, Vec<Node>)>,
 }
 
 impl Configuration {
@@ -303,21 +325,22 @@ impl Configuration {
 
     // add or resolve a terminal to its TerminalId
     fn add_terminal(&mut self, terminal: &Arc<Terminal>) -> TerminalId {
-        if let Some(info) = self.terminals.get(terminal) {
-            return info.terminal_id;
+        let raw: *const Terminal = &**terminal;
+        use std::collections::hash_map::Entry::{Occupied, Vacant};
+        match self.terminals.entry(raw) {
+            Occupied(ent) => {
+                return ent.get().terminal_id;
+            }
+            Vacant(ent) => {
+                let id = self.terminal_by_id.len();
+                ent.insert(TerminalInfo {
+                               configured_layers: LayerSet::default(),
+                               terminal_id: id,
+                           });
+                self.terminal_by_id.insert(id, Arc::clone(terminal));
+                id
+            }
         }
-
-        let id = self.terminal_by_id.len();
-        self.terminals
-            .insert(Arc::clone(terminal),
-                    TerminalInfo {
-                        configured_layers: LayerSet::default(),
-                        terminal_id: id,
-                    });
-
-        self.terminal_by_id.insert(id, Arc::clone(terminal));
-
-        id
     }
 
     pub fn add_twonet(&mut self, a: &Arc<Terminal>, b: &Arc<Terminal>) {
@@ -333,7 +356,7 @@ impl Configuration {
         //         \---- v1 --- v2 --- v3 ----/     layer 0
 
         let src_point = a.point;
-        let sink_point = a.point;
+        let sink_point = b.point;
 
         let x_delta = (sink_point.coords.x - src_point.coords.x).abs() / NUM_VIAS as f64;
         let y_delta = (sink_point.coords.y - src_point.coords.y).abs() / NUM_VIAS as f64;
@@ -404,11 +427,133 @@ impl Configuration {
                        Node::terminal(b_id, layer),
                        PathEdge::from_points(&sink_point, &via_points[NUM_VIAS - 1]));
 
-            g.add_edge(Node::terminal(a_id, layer),
+            g.add_edge(Node::terminal(b_id, layer),
                        Node::sink(b_id),
                        PathEdge::zero());
         }
 
-        self.two_nets.push(TwoNet { graph: g });
+        self.two_nets
+            .push(TwoNet {
+                      graph: g,
+                      src: a_id,
+                      sink: b_id,
+                  });
     }
+
+    fn src_sink_cost(&self, src_sink: TerminalId, tol: &TerminalOnLayer) -> f64 {
+        let term = &self.terminal_by_id[&tol.terminal_id];
+        let raw: *const Terminal = &**term;
+        let info = &self.terminals[&raw];
+
+        if !term.layers.contains(&tol.layer) ||
+           ((info.configured_layers.len() > 0 && !info.configured_layers.contains(&tol.layer))) {
+            return ::std::f64::INFINITY;
+        }
+        return 0.0;
+    }
+
+    fn edge_cost(&self, a: &Node, b: &Node, edge: &PathEdge) -> f64 {
+        if let &Node::Source(tid) = a {
+            return self.src_sink_cost(tid, &b.as_terminal_on_layer().expect("b must be tol"));
+        }
+        if let &Node::Sink(tid) = b {
+            return self.src_sink_cost(tid, &a.as_terminal_on_layer().expect("a must be tol"));
+        }
+        let a = a.as_terminal_on_layer().expect("a must be tol");
+        let b = b.as_terminal_on_layer().expect("b must be tol");
+
+        if a.layer == b.layer {
+            // We may be colliding with something
+            if let Some(contacts) = self.components[a.layer as usize].intersects(edge) {
+                // TODO: compute detour cost
+                (1.0 - ALPHA) * (edge.base_cost * 100.0)
+            } else {
+                (1.0 - ALPHA) * edge.base_cost
+            }
+        } else {
+            // Moving between levels; impose a token cost to avoid
+            // the algorithm from chosing to change levels for no reason.
+            ALPHA
+        }
+    }
+
+    fn assign_terminal_to_layer(&mut self, tol: &Option<TerminalOnLayer>) {
+        if let &Some(tol) = tol {
+            let t = &self.terminal_by_id[&tol.terminal_id];
+            // We always populate self.terminals during initialization,
+            // so this condition should always hold true.
+            let raw: *const Terminal = &**t;
+            if let Some(info) = self.terminals.get_mut(&raw) {
+                info.configured_layers.insert(tol.layer);
+            }
+        }
+    }
+
+    pub fn initial_assignment(&mut self) {
+        let pb = Progress::new("initial assignment", self.two_nets.len());
+
+        let mut free_nets: HashSet<TwoNetId> = (0..self.two_nets.len()).collect();
+
+        loop {
+            if free_nets.len() == 0 {
+                break;
+            }
+
+            pb.inc();
+            let mut best = None;
+
+            for i in free_nets.iter() {
+                let netid : TwoNetId = *i;
+                let ref twonet = self.two_nets[netid];
+
+                if let Some((cost, path)) =
+                    shortest_path(&twonet.graph,
+                                  Node::src(twonet.src),
+                                  Node::sink(twonet.sink),
+                                  |(a, b, edge)| self.edge_cost(&a, &b, edge),
+                                  best.as_ref().and_then(|&(cost, _, _)| Some(cost))) {
+                    /*
+                    println!("path:");
+                    println!("cost: {}", cost);
+                    println!("src: {:?}, sink: {:?}", twonet.src, twonet.sink);
+                    println!("path: {:#?}", path);
+                    println!("");
+                    println!("");
+                    */
+
+                    if best.is_none() || cost < best.as_ref().map(|&(cost, _, _)| cost).unwrap() {
+                        best = Some((cost, netid, path));
+                    }
+                }
+            }
+
+            let (cost, netid, path) = best.expect("must always be able to find the best");
+            free_nets.remove(&netid);
+
+            // Now register the pairs.
+            // The path includes the src, sink nodes, so skip them.
+            for i in 1..path.len() - 1 {
+                let a = path[i].as_terminal_on_layer();
+                let b = path[i + 1].as_terminal_on_layer();
+
+                self.assign_terminal_to_layer(&a);
+                self.assign_terminal_to_layer(&b);
+
+                if let Some(a) = a {
+                    if let Some(b) = b {
+                        if a.layer == b.layer {
+                            // We're forming a component; update info.
+                            let layer = a.layer as usize;
+                            self.components[layer].add_path(&self.terminal_by_id[&a.terminal_id],
+                                                            &self.terminal_by_id[&b.terminal_id]);
+                        }
+                    }
+                }
+            }
+
+            self.assignment.push((netid, path));
+        }
+
+    }
+    //    thread::sleep(time::Duration::from_millis(10));
 }

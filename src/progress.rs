@@ -47,8 +47,8 @@ impl Progress {
         }
     }
 
-    pub fn tick(&self) {
-        self.bar.tick();
+    pub fn inc(&self) {
+        self.bar.inc(1);
     }
 
     pub fn wrap_iter<It: Iterator>(&self, it: It) -> ProgressBarIter<It> {
