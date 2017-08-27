@@ -141,6 +141,10 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
     const LIGHT_PURPLE: Color = [173.0 / 255.0, 127.0 / 255.0, 168.0 / 255.0, 1.0];
     let size = window.size();
 
+    // We do manual swapping so that we can avoid rendering if nothing
+    // actually changed.
+    let mut need_swap = false;
+
     window.draw_2d(e, |c, g| {
         // pixel padding in the window, so that there is a gap between
         // the window border and the pcb boundary
@@ -219,13 +223,19 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
                     }
                 }
             }
-        }
 
-        clear(DARK_CHARCOAL, g);
-        for &(color, line) in lines.lines.iter() {
-            piston_window::line(color, 0.5, line, t, g);
+            clear(DARK_CHARCOAL, g);
+            for &(color, line) in lines.lines.iter() {
+                piston_window::line(color, 0.5, line, t, g);
+            }
+            need_swap = true;
         }
     });
+
+    if need_swap {
+        window.swap_buffers();
+        need_swap = false;
+    }
 }
 
 fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
@@ -247,6 +257,9 @@ fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
     window.set_ups(0);
     window.set_max_fps(1);
     window.set_lazy(false);
+    // We'll manually swap the buffers only when we know that the content
+    // has changed.
+    window.set_swap_buffers(false);
 
     while let Some(e) = window.next() {
         match e {
@@ -262,9 +275,7 @@ fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
                                     features = Some(f);
                                     lines.reset();
                                 }
-                                ProgressUpdate::Done() => {
-                                    window.set_lazy(true);
-                                }
+                                ProgressUpdate::Done() => {}
                             }
                         }
                     }
