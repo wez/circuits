@@ -503,7 +503,7 @@ impl Configuration {
             let mut best = None;
 
             for i in free_nets.iter() {
-                let netid : TwoNetId = *i;
+                let netid: TwoNetId = *i;
                 let ref twonet = self.two_nets[netid];
 
                 if let Some((cost, path)) =
