@@ -104,10 +104,6 @@ pub struct ComponentList {
     next_phase_id: usize,
 }
 
-fn same_object<T>(a: *const T, b: *const T) -> bool {
-    a == b
-}
-
 impl ::std::fmt::Debug for ComponentList {
     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::result::Result<(), ::std::fmt::Error> {
         write!(fmt,

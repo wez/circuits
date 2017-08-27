@@ -5,7 +5,7 @@
 use std::collections::{HashMap, BinaryHeap};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::hash::Hash;
-use petgraph::visit::{Visitable, VisitMap, IntoEdges, EdgeRef};
+use petgraph::visit::{Visitable, IntoEdges, EdgeRef};
 use petgraph::algo::Measure;
 use std::cmp::Ordering;
 
@@ -123,7 +123,6 @@ pub fn shortest_path<G, F, K>(graph: G,
                         visit_next.push(MinScored(total_dist, next, counter));
                         counter += 1;
                     }
-                    _ => {}
                 }
             }
         }
