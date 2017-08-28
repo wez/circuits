@@ -17,8 +17,13 @@ use dijkstra::shortest_path;
 use progress::Progress;
 
 pub type TerminalId = usize;
-const NUM_VIAS: usize = 3;
+const NUM_VIAS: usize = 5;
 const ALPHA: f64 = 0.1;
+
+// Use the raw pointer to the terminal when keying into hashes.
+fn raw_terminal_ptr(t: &Arc<Terminal>) -> *const Terminal {
+    &**t
+}
 
 #[derive(Debug, Clone)]
 pub struct TerminalInfo {
@@ -85,12 +90,28 @@ pub struct Component {
     pub terminals: HashSet<Arc<Terminal>>,
     pub paths: Vec<(Arc<Terminal>, Arc<Terminal>, Shape)>,
     pub hull: Shape,
+    pub hull_perimeter: f64,
+}
+
+impl Component {
+    fn compute_perimeter(&mut self) {
+        let points = self.hull.compute_points();
+        let mut cost = 0.0;
+        for i in 0..points.len() - 1 {
+            let a = &points[i];
+            let b = &points[i + 1];
+            cost += na::distance(a, b);
+        }
+
+        self.hull_perimeter = cost;
+    }
 }
 
 pub struct ComponentPath {
     pub line: Shape,
     pub terminal: Arc<Terminal>,
 }
+
 
 pub type ComponentBroadPhase = DBVTBroadPhase<Point,
                                               ncollide::bounding_volume::AABB<Point>,
@@ -99,7 +120,7 @@ pub type ComponentBroadPhase = DBVTBroadPhase<Point,
 pub type ComponentIndex = usize;
 pub struct ComponentList {
     pub components: Vec<Component>,
-    pub terminal_to_component: HashMap<Arc<Terminal>, ComponentIndex>,
+    pub terminal_to_component: HashMap<*const Terminal, ComponentIndex>,
     pub broad_phase: ComponentBroadPhase,
     next_phase_id: usize,
 }
@@ -132,15 +153,18 @@ impl ComponentList {
             self.broad_phase
                 .interferences_with_bounding_volume(bv, &mut candidates);
 
-            return Some(candidates
-                            .into_iter()
-                            .filter_map(|path| if let Some(contact) = path.line
-                                               .contact(line) {
-                                            Some((Arc::clone(&path.terminal), contact))
-                                        } else {
-                                            None
-                                        })
-                            .collect());
+            if candidates.len() > 0 {
+
+                return Some(candidates
+                                .into_iter()
+                                .filter_map(|path| if let Some(contact) =
+                    path.line.contact(line) {
+                                                Some((Arc::clone(&path.terminal), contact))
+                                            } else {
+                                                None
+                                            })
+                                .collect());
+            }
         }
 
         None
@@ -153,8 +177,12 @@ impl ComponentList {
                          ta: &Arc<Terminal>,
                          tb: &Arc<Terminal>)
                          -> (Option<ComponentIndex>, Option<ComponentIndex>) {
-        let a_idx = self.terminal_to_component.get(ta).map(|x| *x);
-        let b_idx = self.terminal_to_component.get(tb).map(|x| *x);
+        let a_idx = self.terminal_to_component
+            .get(&raw_terminal_ptr(ta))
+            .map(|x| *x);
+        let b_idx = self.terminal_to_component
+            .get(&raw_terminal_ptr(tb))
+            .map(|x| *x);
 
         if a_idx.is_none() {
             (b_idx, None)
@@ -210,7 +238,7 @@ impl ComponentList {
 
                 for t in src_comp.terminals.iter() {
                     self.terminal_to_component
-                        .insert(Arc::clone(t), target_idx);
+                        .insert(raw_terminal_ptr(t), target_idx);
                 }
 
                 target_comp.terminals.extend(src_comp.terminals.drain());
@@ -219,9 +247,9 @@ impl ComponentList {
 
             // Add to target component
             self.terminal_to_component
-                .insert(Arc::clone(a), target_idx);
+                .insert(raw_terminal_ptr(a), target_idx);
             self.terminal_to_component
-                .insert(Arc::clone(b), target_idx);
+                .insert(raw_terminal_ptr(b), target_idx);
 
             let ref mut target_comp = self.components[target_idx];
             target_comp.terminals.insert(Arc::clone(a));
@@ -237,23 +265,29 @@ impl ComponentList {
                 .map(|&(_, _, ref shape)| shape.clone())
                 .collect();
             target_comp.hull = Shape::convex_hull(&lines);
+            target_comp.compute_perimeter();
 
 
         } else {
             // Create a new component
             let comp_idx = self.components.len();
-            self.components
-                .push(Component {
-                          terminals: hashset!{Arc::clone(a), Arc::clone(b)},
-                          paths: vec![(Arc::clone(a), Arc::clone(b), line.clone())],
-                          hull: line,
-                      });
+            let mut comp = Component {
+                terminals: hashset!{Arc::clone(a), Arc::clone(b)},
+                paths: vec![(Arc::clone(a), Arc::clone(b), line.clone())],
+                hull: line,
+                hull_perimeter: 0.0,
+            };
+            comp.compute_perimeter();
+            self.components.push(comp);
 
             self.terminal_to_component
-                .insert(Arc::clone(a), comp_idx);
+                .insert(raw_terminal_ptr(a), comp_idx);
             self.terminal_to_component
-                .insert(Arc::clone(b), comp_idx);
+                .insert(raw_terminal_ptr(b), comp_idx);
         }
+
+        self.broad_phase
+            .update(&mut |_, _| true, &mut |_, _, _| {});
     }
 }
 
@@ -321,7 +355,7 @@ impl Configuration {
 
     // add or resolve a terminal to its TerminalId
     fn add_terminal(&mut self, terminal: &Arc<Terminal>) -> TerminalId {
-        let raw: *const Terminal = &**terminal;
+        let raw = raw_terminal_ptr(terminal);
         use std::collections::hash_map::Entry::{Occupied, Vacant};
         match self.terminals.entry(raw) {
             Occupied(ent) => {
@@ -354,8 +388,8 @@ impl Configuration {
         let src_point = a.point;
         let sink_point = b.point;
 
-        let x_delta = (sink_point.coords.x - src_point.coords.x).abs() / NUM_VIAS as f64;
-        let y_delta = (sink_point.coords.y - src_point.coords.y).abs() / NUM_VIAS as f64;
+        let x_delta = (sink_point.coords.x - src_point.coords.x) / NUM_VIAS as f64;
+        let y_delta = (sink_point.coords.y - src_point.coords.y) / NUM_VIAS as f64;
 
         // Build up the via nodes on each layer.
         let mut via_terminals = Vec::new();
@@ -421,7 +455,7 @@ impl Configuration {
 
             g.add_edge(Node::via(via_terminals[NUM_VIAS - 1], layer),
                        Node::terminal(b_id, layer),
-                       PathEdge::from_points(&sink_point, &via_points[NUM_VIAS - 1]));
+                       PathEdge::from_points(&via_points[NUM_VIAS - 1], &sink_point));
 
             g.add_edge(Node::terminal(b_id, layer),
                        Node::sink(b_id),
@@ -438,7 +472,7 @@ impl Configuration {
 
     fn src_sink_cost(&self, src_sink: TerminalId, tol: &TerminalOnLayer) -> f64 {
         let term = &self.terminal_by_id[&tol.terminal_id];
-        let raw: *const Terminal = &**term;
+        let raw = raw_terminal_ptr(term);
         let info = &self.terminals[&raw];
 
         if !term.layers.contains(&tol.layer) ||
@@ -446,6 +480,26 @@ impl Configuration {
             return ::std::f64::INFINITY;
         }
         return 0.0;
+    }
+
+    fn detour_cost(&self,
+                   comp_list: &ComponentList,
+                   contacts: &Vec<(Arc<Terminal>, ncollide::query::Contact<Point>)>)
+                   -> f64 {
+        let mut cost = 0.0;
+        for &(ref terminal, ref contact) in contacts.iter() {
+            let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal)];
+            let comp = &comp_list.components[component_idx];
+
+            // TODO: we can use the contact point to find the shortest path
+            // around the perimeter.  For now we just take the perimeter
+            // as an estimation.
+
+            cost += comp.hull_perimeter;
+            //cost += ::std::f64::INFINITY;
+        }
+
+        cost
     }
 
     fn edge_cost(&self, a: &Node, b: &Node, edge: &PathEdge) -> f64 {
@@ -460,12 +514,15 @@ impl Configuration {
 
         if a.layer == b.layer {
             // We may be colliding with something
-            if let Some(contacts) = self.components[a.layer as usize].intersects(edge) {
-                // TODO: compute detour cost
-                (1.0 - ALPHA) * (edge.base_cost * 100.0)
-            } else {
-                (1.0 - ALPHA) * edge.base_cost
+            let comp_list = &self.components[a.layer as usize];
+            if edge.base_cost > 0.0 {
+                if let Some(contacts) = comp_list.intersects(edge) {
+                    let detour = self.detour_cost(comp_list, &contacts);
+                    //println!("cost {} detour {}", edge.base_cost, detour);
+                    return (1.0 - ALPHA) * (edge.base_cost + detour);
+                }
             }
+            (1.0 - ALPHA) * edge.base_cost
         } else {
             // Moving between levels; impose a token cost to avoid
             // the algorithm from chosing to change levels for no reason.
@@ -478,7 +535,7 @@ impl Configuration {
             let t = &self.terminal_by_id[&tol.terminal_id];
             // We always populate self.terminals during initialization,
             // so this condition should always hold true.
-            let raw: *const Terminal = &**t;
+            let raw = raw_terminal_ptr(t);
             if let Some(info) = self.terminals.get_mut(&raw) {
                 info.configured_layers.insert(tol.layer);
             }
@@ -551,5 +608,36 @@ impl Configuration {
         }
 
     }
-    //    thread::sleep(time::Duration::from_millis(10));
+
+    pub fn extract_paths(&self) -> HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>> {
+        let mut paths = HashMap::<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>::new();
+
+        for layer_id in self.all_layers.iter() {
+            paths.insert(*layer_id, Vec::new());
+        }
+
+        for &(_, ref path) in self.assignment.iter() {
+            // Skip source and sink nodes
+            for i in 1..path.len() - 2 {
+                let a = path[i];
+                let b = path[i + 1];
+
+                match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
+                    (Some(a), Some(b)) => {
+                        if a.layer == b.layer {
+                            let ta = &self.terminal_by_id[&a.terminal_id];
+                            let tb = &self.terminal_by_id[&b.terminal_id];
+
+                            if let Some(paths) = paths.get_mut(&b.layer) {
+                                paths.push((Arc::clone(ta), Arc::clone(tb)));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        paths
+    }
 }

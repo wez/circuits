@@ -32,6 +32,7 @@ pub struct Features {
     pub obstacles: Vec<Arc<Terminal>>,
     pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
     pub all_layers: LayerSet,
+    pub paths_by_layer: HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
 }
 
 impl Eq for Terminal {}
@@ -188,6 +189,7 @@ impl Features {
             obstacles: obstacles,
             twonets_by_net: twonets_by_net,
             all_layers: all_layers,
+            paths_by_layer: HashMap::new(),
         }
     }
 }

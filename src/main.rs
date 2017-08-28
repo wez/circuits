@@ -100,7 +100,7 @@ impl Notify {
 /// We do this separately from the UI thread so that we can incrementally
 /// update the UI as we compute the data.
 fn compute_thread(pcb: &Pcb, notifier: Notify) {
-    let features = features::Features::from_pcb(&pcb);
+    let mut features = features::Features::from_pcb(&pcb);
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
     let mut cfg = layerassign::Configuration::new(&features.all_layers);
@@ -117,6 +117,9 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     }
 
     cfg.initial_assignment();
+
+    features.paths_by_layer = cfg.extract_paths();
+    notifier.send(ProgressUpdate::Feature(features.clone()));
 
 
     // Send the Done notification.  This sets the GUI to lazy mode
@@ -139,6 +142,13 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
     const RED: Color = [204.0 / 255.0, 0.0, 0.0, 1.0];
     const YELLOW: Color = [237.0 / 255.0, 212.0 / 255.0, 0.0, 1.0];
     const LIGHT_PURPLE: Color = [173.0 / 255.0, 127.0 / 255.0, 168.0 / 255.0, 1.0];
+    const PURPLE: Color = [117.0 / 255.0, 80.0 / 255.0, 123.0 / 255.0, 1.0];
+    const DARK_PURPLE: Color = [92.0 / 255.0, 53.0 / 255.0, 102.0 / 255.0, 1.0];
+    const LIGHT_RED: Color = [239.0 / 255.0, 41.0 / 255.0, 41.0 / 255.0, 1.0];
+    const ORANGE: Color = [245.0 / 255.0, 121.0 / 255.0, 0.0, 1.0];
+    const BROWN: Color = [193.0/255.0, 125.0/255.0, 17.0/255.0, 1.0];
+    const BLUE: Color = [52.0 / 255.0, 101.0 / 255.0, 164.0 / 255.0, 1.0];
+    const LAYER_COLORS: [Color; 2] = [ORANGE, LIGHT_BLUE];
     let size = window.size();
 
     // We do manual swapping so that we can avoid rendering if nothing
@@ -148,7 +158,7 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
     window.draw_2d(e, |c, g| {
         // pixel padding in the window, so that there is a gap between
         // the window border and the pcb boundary
-        let padding = 40f64;
+        let padding = 10f64;
         let t = c.transform
             .flip_v()
             .trans(padding / 2.0, -(size.height as f64) + padding / 2.0);
@@ -222,6 +232,13 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
                         lines.polygon(LIGHT_PURPLE, &poly);
                     }
                 }
+
+                for (layer_id, paths) in features.paths_by_layer.iter() {
+                    for &(ref a, ref b) in paths.iter() {
+                        lines.polygon(LAYER_COLORS[*layer_id as usize],
+                                      &geom::Shape::line(&a.point, &b.point).transform(&scale));
+                    }
+                }
             }
 
             clear(DARK_CHARCOAL, g);
@@ -234,7 +251,6 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
 
     if need_swap {
         window.swap_buffers();
-        need_swap = false;
     }
 }
 
