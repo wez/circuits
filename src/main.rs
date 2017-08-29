@@ -30,52 +30,77 @@ use std::thread;
 use clap::{App, Arg};
 use std::error::Error;
 use self::dsn::Pcb;
-use piston_window::types::Color;
+use piston_window::types::{Color, Matrix2d};
+use piston_window::Graphics;
 
-/// Holds pre-transformed lines ready to be rendered.
-/// The PCB can have a lot of discrete lines (especially with
-/// circular pads) which takes some time to transform and build
-/// up all the lines.  This caches those lines for a given size
-/// of window.  It does still take some cycles to render it to
-/// the raw context though.
-struct LinesToRender {
+#[allow(dead_code)]
+const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const LIGHT_BLUE: Color = [114.0 / 255.0, 159.0 / 255.0, 207.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const DARK_GREEN: Color = [78.0 / 255.0, 154.0 / 255.0, 6.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const RED: Color = [204.0 / 255.0, 0.0, 0.0, 1.0];
+#[allow(dead_code)]
+const YELLOW: Color = [237.0 / 255.0, 212.0 / 255.0, 0.0, 1.0];
+#[allow(dead_code)]
+const LIGHT_PURPLE: Color = [173.0 / 255.0, 127.0 / 255.0, 168.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const PURPLE: Color = [117.0 / 255.0, 80.0 / 255.0, 123.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const DARK_PURPLE: Color = [92.0 / 255.0, 53.0 / 255.0, 102.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const LIGHT_RED: Color = [239.0 / 255.0, 41.0 / 255.0, 41.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const ORANGE: Color = [245.0 / 255.0, 121.0 / 255.0, 0.0, 1.0];
+#[allow(dead_code)]
+const BROWN: Color = [193.0 / 255.0, 125.0 / 255.0, 17.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const BLUE: Color = [52.0 / 255.0, 101.0 / 255.0, 164.0 / 255.0, 1.0];
+#[allow(dead_code)]
+const LAYER_COLORS: [Color; 2] = [ORANGE, LIGHT_BLUE];
+
+#[derive(Default)]
+struct RenderState {
     height: u32,
     width: u32,
-    lines: Vec<(Color, [f64; 4])>,
 }
 
-impl LinesToRender {
+impl RenderState {
     fn reset(&mut self) {
         self.height = 0;
         self.width = 0;
-        self.lines.clear();
     }
 
     fn reset_if_changed(&mut self, height: u32, width: u32) -> bool {
         if self.height != height || self.width != width {
             self.height = height;
             self.width = width;
-            self.lines.clear();
             true
         } else {
             false
         }
     }
+}
 
-    fn polygon(&mut self, color: Color, shape: &geom::Shape) {
-        let poly = shape
-            .handle
-            .as_shape::<geom::Polyline>()
-            .expect("transform always yields a polygon!?");
+fn draw_polygon<G>(color: Color, shape: &geom::Shape, radius: f64, transform: Matrix2d, g: &mut G)
+    where G: Graphics
+{
+    let poly = shape
+        .handle
+        .as_shape::<geom::Polyline>()
+        .expect("transform always yields a polygon!?");
 
-        let points = poly.vertices();
+    let points = poly.vertices();
 
-        for i in 0..points.len() - 1 {
-            let a = &points[i];
-            let b = &points[i + 1];
-            self.lines
-                .push((color, [a.coords.x, a.coords.y, b.coords.x, b.coords.y]));
-        }
+    for i in 0..points.len() - 1 {
+        let a = &points[i];
+        let b = &points[i + 1];
+        piston_window::line(color,
+                            radius,
+                            [a.coords.x, a.coords.y, b.coords.x, b.coords.y],
+                            transform,
+                            g);
     }
 }
 
@@ -132,23 +157,9 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
             e: &piston_window::Event,
             pcb: &Pcb,
             features: &Option<features::Features>,
-            lines: &mut LinesToRender) {
+            state: &mut RenderState) {
     use piston_window::*;
-    use piston_window::types::Color;
 
-    const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
-    const LIGHT_BLUE: Color = [114.0 / 255.0, 159.0 / 255.0, 207.0 / 255.0, 1.0];
-    const DARK_GREEN: Color = [78.0 / 255.0, 154.0 / 255.0, 6.0 / 255.0, 1.0];
-    const RED: Color = [204.0 / 255.0, 0.0, 0.0, 1.0];
-    const YELLOW: Color = [237.0 / 255.0, 212.0 / 255.0, 0.0, 1.0];
-    const LIGHT_PURPLE: Color = [173.0 / 255.0, 127.0 / 255.0, 168.0 / 255.0, 1.0];
-    const PURPLE: Color = [117.0 / 255.0, 80.0 / 255.0, 123.0 / 255.0, 1.0];
-    const DARK_PURPLE: Color = [92.0 / 255.0, 53.0 / 255.0, 102.0 / 255.0, 1.0];
-    const LIGHT_RED: Color = [239.0 / 255.0, 41.0 / 255.0, 41.0 / 255.0, 1.0];
-    const ORANGE: Color = [245.0 / 255.0, 121.0 / 255.0, 0.0, 1.0];
-    const BROWN: Color = [193.0/255.0, 125.0/255.0, 17.0/255.0, 1.0];
-    const BLUE: Color = [52.0 / 255.0, 101.0 / 255.0, 164.0 / 255.0, 1.0];
-    const LAYER_COLORS: [Color; 2] = [ORANGE, LIGHT_BLUE];
     let size = window.size();
 
     // We do manual swapping so that we can avoid rendering if nothing
@@ -163,7 +174,9 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
             .flip_v()
             .trans(padding / 2.0, -(size.height as f64) + padding / 2.0);
 
-        if lines.reset_if_changed(size.height, size.width) {
+        if state.reset_if_changed(size.height, size.width) {
+            clear(DARK_CHARCOAL, g);
+
             // First, compute the overall bounds of the shapes we want to render.
             let bounds = {
                 let mut bounds = None;
@@ -197,7 +210,7 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
 
             // boundary in light blue
             for shape in pcb.structure.boundary.iter() {
-                lines.polygon(LIGHT_BLUE, &shape.shape.transform(&scale));
+                draw_polygon(LIGHT_BLUE, &shape.shape.transform(&scale), 0.5, t, g);
             }
 
             // components
@@ -209,18 +222,18 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
                         .shape
                         .translate(&comp.position)
                         .transform(&scale);
-                    lines.polygon(DARK_GREEN, &s);
+                    draw_polygon(DARK_GREEN, &s, 0.5, t, g);
                 }
             }
 
             if let Some(ref features) = *features {
                 for obs in features.obstacles.iter() {
-                    lines.polygon(RED, &obs.shape.transform(&scale));
+                    draw_polygon(RED, &obs.shape.transform(&scale), 0.5, t, g);
                 }
 
                 for (_, terminals) in features.terminals_by_net.iter() {
                     for terminal in terminals.iter() {
-                        lines.polygon(YELLOW, &terminal.shape.transform(&scale));
+                        draw_polygon(YELLOW, &terminal.shape.transform(&scale), 0.5, t, g);
                     }
                 }
 
@@ -229,22 +242,21 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
                         let points = vec![a.shape.aabb().center(), b.shape.aabb().center()];
                         let poly = geom::Shape::polygon(points, geom::origin(), None)
                             .transform(&scale);
-                        lines.polygon(LIGHT_PURPLE, &poly);
+                        draw_polygon(LIGHT_PURPLE, &poly, 0.5, t, g);
                     }
                 }
 
                 for (layer_id, paths) in features.paths_by_layer.iter() {
                     for &(ref a, ref b) in paths.iter() {
-                        lines.polygon(LAYER_COLORS[*layer_id as usize],
-                                      &geom::Shape::line(&a.point, &b.point).transform(&scale));
+                        draw_polygon(LAYER_COLORS[*layer_id as usize],
+                                     &geom::Shape::line(&a.point, &b.point).transform(&scale),
+                                     0.7,
+                                     t,
+                                     g);
                     }
                 }
             }
 
-            clear(DARK_CHARCOAL, g);
-            for &(color, line) in lines.lines.iter() {
-                piston_window::line(color, 0.5, line, t, g);
-            }
             need_swap = true;
         }
     });
@@ -257,11 +269,7 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
 fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
     use piston_window::*;
     let mut features: Option<features::Features> = None;
-    let mut lines = LinesToRender {
-        height: 0,
-        width: 0,
-        lines: Vec::new(),
-    };
+    let mut state = RenderState::default();
 
     let mut window: PistonWindow = WindowSettings::new("PCB Autorouter", [700; 2])
         .exit_on_esc(true)
@@ -270,8 +278,8 @@ fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
 
     // We don't need to be so aggressive with our frame rate, so
     // dial down the update and frame rates.
-    window.set_ups(0);
-    window.set_max_fps(1);
+    window.set_ups(5);
+    window.set_max_fps(5);
     window.set_lazy(false);
     // We'll manually swap the buffers only when we know that the content
     // has changed.
@@ -282,17 +290,24 @@ fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
             Event::Loop(l) => {
                 match l {
                     Loop::Render(_) => {
-                        draw_gui(&mut window, &e, &pcb, &features, &mut lines);
+                        draw_gui(&mut window, &e, &pcb, &features, &mut state);
                     }
-                    Loop::Idle(_) => {
-                        if let Ok(progress) = rx.try_recv() {
+                    Loop::Idle(args) => {
+                        let mut need_update = false;
+                        let seconds = args.dt.trunc() as u64;
+                        let nanos = args.dt.fract() as u32 * 1_000_000_000;
+                        while let Ok(progress) =
+                            rx.recv_timeout(std::time::Duration::new(seconds, nanos)) {
+                            need_update = true;
                             match progress {
                                 ProgressUpdate::Feature(f) => {
                                     features = Some(f);
-                                    lines.reset();
                                 }
                                 ProgressUpdate::Done() => {}
                             }
+                        }
+                        if need_update {
+                            state.reset();
                         }
                     }
                     _ => {}
