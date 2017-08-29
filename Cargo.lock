@@ -4,7 +4,6 @@ version = "0.1.0"
 dependencies = [
  "clap 2.26.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures-cpupool 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "geo 0.4.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "indicatif 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -365,15 +364,6 @@ dependencies = [
 name = "futures"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "futures-cpupool"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "futures 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)",
- "num_cpus 1.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "gcc"
@@ -1586,7 +1576,6 @@ dependencies = [
 "checksum fixedbitset 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "b0cb3d75726fa0c5ed3dce5dfcf0796affa2a60b33967f45012d86fb95a886f2"
 "checksum fs2 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)" = "bcd414e5a1a979b931bb92f41b7a54106d3f6d2e6c253e9ce943b7cd468251ef"
 "checksum futures 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)" = "4b63a4792d4f8f686defe3b39b92127fea6344de5d38202b2ee5a11bbbf29d6a"
-"checksum futures-cpupool 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "a283c84501e92cade5ea673a2a7ca44f71f209ccdd302a3e0896f50083d2c5ff"
 "checksum gcc 0.3.51 (registry+https://github.com/rust-lang/crates.io-index)" = "120d07f202dcc3f72859422563522b66fe6463a4c513df062874daad05f85f0a"
 "checksum gdi32-sys 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "65256ec4dc2592e6f05bfc1ca3b956a4e0698aa90b1dff1f5687d55a5a3fd59a"
 "checksum generic-array 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3406a3975bc944fdd85b7964d53296a0ff11f4b6c4704fa4972c9a7c8ba27367"

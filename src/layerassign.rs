@@ -107,22 +107,21 @@ impl Component {
     }
 }
 
+#[derive(Clone)]
 pub struct ComponentPath {
     pub line: Shape,
     pub terminal: Arc<Terminal>,
 }
 
 
-pub type ComponentBroadPhase = DBVTBroadPhase<Point,
-                                              ncollide::bounding_volume::AABB<Point>,
-                                              ComponentPath>;
+pub type ComponentBroadPhase = DBVTBroadPhase<Point, ncollide::bounding_volume::AABB<Point>, usize>;
 
 pub type ComponentIndex = usize;
 pub struct ComponentList {
     pub components: Vec<Component>,
     pub terminal_to_component: HashMap<*const Terminal, ComponentIndex>,
-    pub broad_phase: ComponentBroadPhase,
-    next_phase_id: usize,
+    broad_phase: ComponentBroadPhase,
+    paths: Vec<ComponentPath>,
 }
 
 impl ::std::fmt::Debug for ComponentList {
@@ -134,15 +133,37 @@ impl ::std::fmt::Debug for ComponentList {
     }
 }
 
+impl Clone for ComponentList {
+    fn clone(&self) -> ComponentList {
+        let mut list = ComponentList {
+            terminal_to_component: self.terminal_to_component.clone(),
+            components: self.components.clone(),
+            broad_phase: ComponentBroadPhase::new(1.0, false),
+            paths: self.paths.clone(),
+        };
+
+        // Rebuild the broad phase
+        for phase_id in 0..list.paths.len() {
+            let path = &list.paths[phase_id];
+            list.broad_phase
+                .deferred_add(phase_id, path.line.aabb(), phase_id);
+        }
+
+        list.broad_phase
+            .update(&mut |_, _| true, &mut |_, _, _| {});
+
+        list
+    }
+}
+
 impl ComponentList {
     fn new() -> ComponentList {
         ComponentList {
             terminal_to_component: HashMap::new(),
             components: Vec::new(),
             broad_phase: ComponentBroadPhase::new(1.0, false),
-            next_phase_id: 0,
+            paths: Vec::new(),
         }
-
     }
 
     fn intersects(&self,
@@ -157,11 +178,13 @@ impl ComponentList {
 
                 return Some(candidates
                                 .into_iter()
-                                .filter_map(|path| if let Some(contact) =
-                    path.line.contact(line) {
-                                                Some((Arc::clone(&path.terminal), contact))
-                                            } else {
-                                                None
+                                .filter_map(|path_index| {
+                                                let path = &self.paths[*path_index];
+                                                if let Some(contact) = path.line.contact(line) {
+                                                    Some((Arc::clone(&path.terminal), contact))
+                                                } else {
+                                                    None
+                                                }
                                             })
                                 .collect());
             }
@@ -221,14 +244,15 @@ impl ComponentList {
 
         let line = Shape::line(&a.point, &b.point);
 
+        let phase_id = self.paths.len();
+        self.paths
+            .push(ComponentPath {
+                      line: line.clone(),
+                      terminal: Arc::clone(a),
+                  });
+
         self.broad_phase
-            .deferred_add(self.next_phase_id,
-                          line.aabb(),
-                          ComponentPath {
-                              line: line.clone(),
-                              terminal: Arc::clone(a),
-                          });
-        self.next_phase_id = self.next_phase_id + 1;
+            .deferred_add(phase_id, line.aabb(), phase_id);
 
         if let Some(target_idx) = target_idx {
             if let Some(src_idx) = src_idx {
@@ -328,7 +352,7 @@ struct TwoNet {
 }
 pub type TwoNetId = usize;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Configuration {
     // map constant terminal info to the mutable (within
     // this configuration instance) node info.
@@ -350,8 +374,10 @@ impl Configuration {
         for _ in 0..all_layers.len() {
             cfg.components.push(ComponentList::new());
         }
+
         cfg
     }
+
 
     // add or resolve a terminal to its TerminalId
     fn add_terminal(&mut self, terminal: &Arc<Terminal>) -> TerminalId {
@@ -542,6 +568,16 @@ impl Configuration {
         }
     }
 
+    fn cost_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
+        let ref twonet = self.two_nets[netid];
+
+        shortest_path(&twonet.graph,
+                      Node::src(twonet.src),
+                      Node::sink(twonet.sink),
+                      |(a, b, edge)| self.edge_cost(&a, &b, edge),
+                      cutoff)
+    }
+
     pub fn initial_assignment(&mut self) {
         let pb = Progress::new("initial assignment", self.two_nets.len());
 
@@ -554,33 +590,19 @@ impl Configuration {
 
             pb.inc();
             let mut best = None;
-
             for i in free_nets.iter() {
                 let netid: TwoNetId = *i;
                 let ref twonet = self.two_nets[netid];
+                let cutoff = best.as_ref().and_then(|&(_, cost, _)| Some(cost));
 
-                if let Some((cost, path)) =
-                    shortest_path(&twonet.graph,
-                                  Node::src(twonet.src),
-                                  Node::sink(twonet.sink),
-                                  |(a, b, edge)| self.edge_cost(&a, &b, edge),
-                                  best.as_ref().and_then(|&(cost, _, _)| Some(cost))) {
-                    /*
-                    println!("path:");
-                    println!("cost: {}", cost);
-                    println!("src: {:?}, sink: {:?}", twonet.src, twonet.sink);
-                    println!("path: {:#?}", path);
-                    println!("");
-                    println!("");
-                    */
-
-                    if best.is_none() || cost < best.as_ref().map(|&(cost, _, _)| cost).unwrap() {
-                        best = Some((cost, netid, path));
+                if let Some((cost, path)) = self.cost_for_net(netid, cutoff) {
+                    if best.is_none() || cost < best.as_ref().map(|&(_, cost, _)| cost).unwrap() {
+                        best = Some((netid, cost, path));
                     }
                 }
             }
 
-            let (cost, netid, path) = best.expect("must always be able to find the best");
+            let (netid, cost, path) = best.expect("must always be able to find the best");
             free_nets.remove(&netid);
 
             // Now register the pairs.
