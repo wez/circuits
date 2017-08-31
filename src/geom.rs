@@ -1,7 +1,6 @@
 extern crate ncollide;
 extern crate nalgebra as na;
 use ncollide::transformation::ToPolyline;
-use ncollide::query;
 use std::sync::Arc;
 use geo;
 use geo::convexhull::ConvexHull;

@@ -1,18 +1,14 @@
 use petgraph::graphmap::DiGraphMap;
 use features::{LayerSet, Terminal};
-use geom::{Location, Shape, Point, Vector, origin};
-use geo::convexhull::ConvexHull;
-use geo::intersects::Intersects;
+use geom::{Location, Shape, Point, Vector};
 use std::collections::{HashSet, HashMap};
 use ncollide::broad_phase::BroadPhase;
 use ncollide::broad_phase::DBVTBroadPhase;
-use ncollide::bounding_volume::BoundingVolume;
 extern crate ncollide;
-use ncollide::query;
 extern crate nalgebra as na;
 use std::sync::Arc;
-use std::{thread, time};
 use dijkstra::shortest_path;
+use ordered_float::OrderedFloat;
 
 use progress::Progress;
 
@@ -150,7 +146,7 @@ impl Clone for ComponentList {
         }
 
         list.broad_phase
-            .update(&mut |_, _| true, &mut |_, _, _| {});
+            .update(&mut |a, b| a != b, &mut |_, _, _| {});
 
         list
     }
@@ -311,7 +307,7 @@ impl ComponentList {
         }
 
         self.broad_phase
-            .update(&mut |_, _| true, &mut |_, _, _| {});
+            .update(&mut |a, b| a != b, &mut |_, _, _| {});
     }
 }
 
@@ -349,8 +345,17 @@ struct TwoNet {
     graph: AssignGraphMap,
     src: TerminalId,
     sink: TerminalId,
+    base_cost: f64,
 }
 pub type TwoNetId = usize;
+
+#[derive(Debug, Default, Clone)]
+pub struct Assignment {
+    netid: TwoNetId,
+    cost: f64,
+    path: Vec<Node>,
+    base_cost: f64,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Configuration {
@@ -364,7 +369,8 @@ pub struct Configuration {
     all_layers: LayerSet,
     components: Vec<ComponentList>,
 
-    assignment: Vec<(TwoNetId, Vec<Node>)>,
+    pub assignment: Vec<Assignment>,
+    pub overall_cost: f64,
 }
 
 impl Configuration {
@@ -377,7 +383,6 @@ impl Configuration {
 
         cfg
     }
-
 
     // add or resolve a terminal to its TerminalId
     fn add_terminal(&mut self, terminal: &Arc<Terminal>) -> TerminalId {
@@ -493,17 +498,25 @@ impl Configuration {
                       graph: g,
                       src: a_id,
                       sink: b_id,
+                      base_cost: na::distance(&src_point, &sink_point),
                   });
     }
 
-    fn src_sink_cost(&self, src_sink: TerminalId, tol: &TerminalOnLayer) -> f64 {
+    fn src_sink_cost(&self, _: TerminalId, tol: &TerminalOnLayer) -> f64 {
         let term = &self.terminal_by_id[&tol.terminal_id];
         let raw = raw_terminal_ptr(term);
         let info = &self.terminals[&raw];
 
-        if !term.layers.contains(&tol.layer) ||
-           ((info.configured_layers.len() > 0 && !info.configured_layers.contains(&tol.layer))) {
+        if !term.layers.contains(&tol.layer) {
+            // Not connected to this layer
             return ::std::f64::INFINITY;
+
+        }
+
+        if info.configured_layers.len() > 0 && !info.configured_layers.contains(&tol.layer) {
+            // TODO: re-examine the intent of this check.  Right now it
+            // prevents us from using the alternate layer in most cases.
+            // return ::std::f64::INFINITY;
         }
         return 0.0;
     }
@@ -513,7 +526,7 @@ impl Configuration {
                    contacts: &Vec<(Arc<Terminal>, ncollide::query::Contact<Point>)>)
                    -> f64 {
         let mut cost = 0.0;
-        for &(ref terminal, ref contact) in contacts.iter() {
+        for &(ref terminal, _) in contacts.iter() {
             let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal)];
             let comp = &comp_list.components[component_idx];
 
@@ -521,8 +534,7 @@ impl Configuration {
             // around the perimeter.  For now we just take the perimeter
             // as an estimation.
 
-            cost += comp.hull_perimeter;
-            //cost += ::std::f64::INFINITY;
+            cost += comp.hull_perimeter / 2.0;
         }
 
         cost
@@ -564,11 +576,13 @@ impl Configuration {
             let raw = raw_terminal_ptr(t);
             if let Some(info) = self.terminals.get_mut(&raw) {
                 info.configured_layers.insert(tol.layer);
+            } else {
+                panic!("wat!?");
             }
         }
     }
 
-    fn cost_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
+    fn path_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
         let ref twonet = self.two_nets[netid];
 
         shortest_path(&twonet.graph,
@@ -578,6 +592,34 @@ impl Configuration {
                       cutoff)
     }
 
+    fn assign_path(&mut self, assignment: Assignment) {
+        // Now register the pairs.
+        // The path includes the src, sink nodes, so skip them.
+        for i in 1..assignment.path.len() - 1 {
+            let a = assignment.path[i].as_terminal_on_layer();
+            let b = assignment.path[i + 1].as_terminal_on_layer();
+
+            self.assign_terminal_to_layer(&a);
+            self.assign_terminal_to_layer(&b);
+
+            if let Some(a) = a {
+                if let Some(b) = b {
+                    if a.layer == b.layer {
+                        // We're forming a component; update info.
+                        let layer = a.layer as usize;
+                        self.components[layer].add_path(&self.terminal_by_id[&a.terminal_id],
+                                                        &self.terminal_by_id[&b.terminal_id]);
+                    }
+                }
+            }
+        }
+
+        self.overall_cost += assignment.cost;
+        self.assignment.push(assignment);
+    }
+
+    /// Initial assignment is done by finding the cheapest path and assigning that
+    /// first, then repeating to find the next cheapest path and so on.
     pub fn initial_assignment(&mut self) {
         let pb = Progress::new("initial assignment", self.two_nets.len());
 
@@ -593,42 +635,109 @@ impl Configuration {
             for i in free_nets.iter() {
                 let netid: TwoNetId = *i;
                 let ref twonet = self.two_nets[netid];
-                let cutoff = best.as_ref().and_then(|&(_, cost, _)| Some(cost));
+                let cutoff = best.as_ref().and_then(|&(_, cost, _, _)| Some(cost));
 
-                if let Some((cost, path)) = self.cost_for_net(netid, cutoff) {
-                    if best.is_none() || cost < best.as_ref().map(|&(_, cost, _)| cost).unwrap() {
-                        best = Some((netid, cost, path));
+                if let Some((cost, path)) = self.path_for_net(netid, cutoff) {
+                    if best.is_none() ||
+                       cost < best.as_ref().map(|&(_, cost, _, _)| cost).unwrap() {
+                        best = Some((netid, cost, path, twonet.base_cost));
                     }
                 }
             }
 
-            let (netid, cost, path) = best.expect("must always be able to find the best");
+            let (netid, cost, path, base_cost) =
+                best.expect("must always be able to find the best");
             free_nets.remove(&netid);
 
-            // Now register the pairs.
-            // The path includes the src, sink nodes, so skip them.
-            for i in 1..path.len() - 1 {
-                let a = path[i].as_terminal_on_layer();
-                let b = path[i + 1].as_terminal_on_layer();
+            self.assign_path(Assignment {
+                                 netid: netid,
+                                 cost: cost,
+                                 path: path,
+                                 base_cost: base_cost,
+                             });
 
-                self.assign_terminal_to_layer(&a);
-                self.assign_terminal_to_layer(&b);
+        }
+    }
 
-                if let Some(a) = a {
-                    if let Some(b) = b {
-                        if a.layer == b.layer {
-                            // We're forming a component; update info.
-                            let layer = a.layer as usize;
-                            self.components[layer].add_path(&self.terminal_by_id[&a.terminal_id],
-                                                            &self.terminal_by_id[&b.terminal_id]);
-                        }
-                    }
+    pub fn improve_one(&self) -> Option<Configuration> {
+        // Do we have any paths that we think could be improved?
+        // Comparing the base cost of the path with the final cost helps us
+        // decide if there is potential for an improvement.
+
+        let mut needs_improvement: Vec<(_, _, _)> = self.assignment
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, ref assignment)| if assignment.cost >
+                                                   (1.0 - ALPHA) * assignment.base_cost {
+                            // Track the difference between the base and the actual cost;
+                            // we will try to improve the largest of these first
+                            Some((OrderedFloat(assignment.cost - assignment.base_cost),
+                                  idx,
+                                  assignment.base_cost))
+                        } else {
+                            None
+                        })
+            .collect();
+
+        // Sort by decreasing cost delta
+        needs_improvement.sort_by(|&(a, _, _), &(b, _, _)| b.cmp(&a));
+        let pb = Progress::new("improving", needs_improvement.len());
+
+        for &(_, worst_idx, _) in pb.wrap_iter(needs_improvement.iter()) {
+            // make a new Configuration that we can build up in a different order
+            let mut cfg = Configuration {
+                terminals: HashMap::new(),
+                terminal_by_id: self.terminal_by_id.clone(),
+                two_nets: self.two_nets.clone(),
+                all_layers: self.all_layers.clone(),
+                components: Vec::new(),
+                assignment: Vec::new(),
+                overall_cost: 0.0,
+            };
+            for _ in 0..self.all_layers.len() {
+                cfg.components.push(ComponentList::new());
+            }
+            for (terminal_id, term) in self.terminal_by_id.iter() {
+                cfg.terminals
+                    .insert(raw_terminal_ptr(&term),
+                            TerminalInfo {
+                                configured_layers: LayerSet::default(),
+                                terminal_id: *terminal_id,
+                            });
+            }
+
+            // Now, take the worst_idx first and assignment, stitching in the
+            // paths in the prior assignment order, taking care not to assign
+            // worst_idx twice.
+            let mut complete = true;
+            for idx in [worst_idx]
+                    .iter()
+                    .map(|x| *x)
+                    .chain((0..self.assignment.len()).filter(|x| *x != worst_idx)) {
+                let assignment = &self.assignment[idx];
+
+                // let the path finding algo bail out early if this path puts
+                // us over the target cost.
+                let cutoff = Some(self.overall_cost - cfg.overall_cost);
+
+                if let Some((cost, path)) = cfg.path_for_net(assignment.netid, cutoff) {
+                    cfg.assign_path(Assignment {
+                                        netid: assignment.netid,
+                                        cost: cost,
+                                        path: path,
+                                        base_cost: assignment.base_cost,
+                                    });
+                } else {
+                    complete = false;
+                    break;
                 }
             }
 
-            self.assignment.push((netid, path));
+            if complete && cfg.overall_cost < self.overall_cost {
+                return Some(cfg);
+            }
         }
-
+        None
     }
 
     pub fn extract_paths(&self) -> HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>> {
@@ -638,11 +747,11 @@ impl Configuration {
             paths.insert(*layer_id, Vec::new());
         }
 
-        for &(_, ref path) in self.assignment.iter() {
+        for ref assignment in self.assignment.iter() {
             // Skip source and sink nodes
-            for i in 1..path.len() - 2 {
-                let a = path[i];
-                let b = path[i + 1];
+            for i in 1..assignment.path.len() - 2 {
+                let a = assignment.path[i];
+                let b = assignment.path[i + 1];
 
                 match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
                     (Some(a), Some(b)) => {

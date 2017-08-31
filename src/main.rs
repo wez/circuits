@@ -142,10 +142,25 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     }
 
     cfg.initial_assignment();
+    println!("initial cfg cost is {} for {} paths",
+             cfg.overall_cost,
+             cfg.assignment.len());
 
     features.paths_by_layer = cfg.extract_paths();
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
+    loop {
+        if let Some(improved) = cfg.improve_one() {
+            cfg = improved;
+            println!("improved cfg cost is {}", cfg.overall_cost);
+            features.paths_by_layer = cfg.extract_paths();
+            notifier.send(ProgressUpdate::Feature(features.clone()));
+        } else {
+            break;
+        }
+    }
+
+    println!("All Done");
 
     // Send the Done notification.  This sets the GUI to lazy mode
     // which effectively prevents it from being woken up by us in
