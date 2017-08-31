@@ -32,6 +32,7 @@ use std::error::Error;
 use self::dsn::Pcb;
 use piston_window::types::{Color, Matrix2d};
 use piston_window::Graphics;
+use std::rc::Rc;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -128,7 +129,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let mut features = features::Features::from_pcb(&pcb);
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
-    let mut cfg = layerassign::Configuration::new(&features.all_layers);
+    let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers);
 
     {
         let pb = Progress::new("building layer assignment graphs",
@@ -140,6 +141,8 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             }
         }
     }
+
+    let mut cfg = layerassign::Configuration::new(&Rc::new(cfg));
 
     cfg.initial_assignment();
     println!("initial cfg cost is {} for {} paths",

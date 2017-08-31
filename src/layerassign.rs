@@ -9,6 +9,7 @@ extern crate nalgebra as na;
 use std::sync::Arc;
 use dijkstra::shortest_path;
 use ordered_float::OrderedFloat;
+use std::rc::Rc;
 
 use progress::Progress;
 
@@ -358,29 +359,19 @@ pub struct Assignment {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Configuration {
-    // map constant terminal info to the mutable (within
-    // this configuration instance) node info.
-    terminals: HashMap<*const Terminal, TerminalInfo>,
+pub struct SharedConfiguration {
     terminal_by_id: HashMap<TerminalId, Arc<Terminal>>,
+    terminals: HashMap<*const Terminal, TerminalInfo>,
 
     // Indices are referenced via TwoNetId
     two_nets: Vec<TwoNet>,
     all_layers: LayerSet,
-    components: Vec<ComponentList>,
-
-    pub assignment: Vec<Assignment>,
-    pub overall_cost: f64,
 }
 
-impl Configuration {
-    pub fn new(all_layers: &LayerSet) -> Configuration {
-        let mut cfg = Configuration::default();
+impl SharedConfiguration {
+    pub fn new(all_layers: &LayerSet) -> SharedConfiguration {
+        let mut cfg = SharedConfiguration::default();
         cfg.all_layers = all_layers.clone();
-        for _ in 0..all_layers.len() {
-            cfg.components.push(ComponentList::new());
-        }
-
         cfg
     }
 
@@ -501,9 +492,40 @@ impl Configuration {
                       base_cost: na::distance(&src_point, &sink_point),
                   });
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Configuration {
+    // map constant terminal info to the mutable (within
+    // this configuration instance) node info.
+    terminals: HashMap<*const Terminal, TerminalInfo>,
+    components: Vec<ComponentList>,
+    shared: Rc<SharedConfiguration>,
+
+    pub assignment: Vec<Assignment>,
+    pub overall_cost: f64,
+}
+
+impl Configuration {
+    pub fn new(shared: &Rc<SharedConfiguration>) -> Configuration {
+        let terminals = shared.terminals.clone();
+        let mut cfg = Configuration {
+            terminals: terminals,
+            components: Vec::new(),
+            shared: Rc::clone(shared),
+            assignment: Vec::new(),
+            overall_cost: 0.0,
+        };
+
+        for _ in 0..shared.all_layers.len() {
+            cfg.components.push(ComponentList::new());
+        }
+
+        cfg
+    }
 
     fn src_sink_cost(&self, _: TerminalId, tol: &TerminalOnLayer) -> f64 {
-        let term = &self.terminal_by_id[&tol.terminal_id];
+        let term = &self.shared.terminal_by_id[&tol.terminal_id];
         let raw = raw_terminal_ptr(term);
         let info = &self.terminals[&raw];
 
@@ -570,7 +592,7 @@ impl Configuration {
 
     fn assign_terminal_to_layer(&mut self, tol: &Option<TerminalOnLayer>) {
         if let &Some(tol) = tol {
-            let t = &self.terminal_by_id[&tol.terminal_id];
+            let t = &self.shared.terminal_by_id[&tol.terminal_id];
             // We always populate self.terminals during initialization,
             // so this condition should always hold true.
             let raw = raw_terminal_ptr(t);
@@ -583,7 +605,7 @@ impl Configuration {
     }
 
     fn path_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
-        let ref twonet = self.two_nets[netid];
+        let ref twonet = self.shared.two_nets[netid];
 
         shortest_path(&twonet.graph,
                       Node::src(twonet.src),
@@ -607,8 +629,10 @@ impl Configuration {
                     if a.layer == b.layer {
                         // We're forming a component; update info.
                         let layer = a.layer as usize;
-                        self.components[layer].add_path(&self.terminal_by_id[&a.terminal_id],
-                                                        &self.terminal_by_id[&b.terminal_id]);
+                        self.components[layer].add_path(&self.shared.terminal_by_id
+                                                             [&a.terminal_id],
+                                                        &self.shared.terminal_by_id
+                                                             [&b.terminal_id]);
                     }
                 }
             }
@@ -621,9 +645,9 @@ impl Configuration {
     /// Initial assignment is done by finding the cheapest path and assigning that
     /// first, then repeating to find the next cheapest path and so on.
     pub fn initial_assignment(&mut self) {
-        let pb = Progress::new("initial assignment", self.two_nets.len());
+        let pb = Progress::new("initial assignment", self.shared.two_nets.len());
 
-        let mut free_nets: HashSet<TwoNetId> = (0..self.two_nets.len()).collect();
+        let mut free_nets: HashSet<TwoNetId> = (0..self.shared.two_nets.len()).collect();
 
         loop {
             if free_nets.len() == 0 {
@@ -634,7 +658,7 @@ impl Configuration {
             let mut best = None;
             for i in free_nets.iter() {
                 let netid: TwoNetId = *i;
-                let ref twonet = self.two_nets[netid];
+                let ref twonet = self.shared.two_nets[netid];
                 let cutoff = best.as_ref().and_then(|&(_, cost, _, _)| Some(cost));
 
                 if let Some((cost, path)) = self.path_for_net(netid, cutoff) {
@@ -685,26 +709,7 @@ impl Configuration {
 
         for &(_, worst_idx, _) in pb.wrap_iter(needs_improvement.iter()) {
             // make a new Configuration that we can build up in a different order
-            let mut cfg = Configuration {
-                terminals: HashMap::new(),
-                terminal_by_id: self.terminal_by_id.clone(),
-                two_nets: self.two_nets.clone(),
-                all_layers: self.all_layers.clone(),
-                components: Vec::new(),
-                assignment: Vec::new(),
-                overall_cost: 0.0,
-            };
-            for _ in 0..self.all_layers.len() {
-                cfg.components.push(ComponentList::new());
-            }
-            for (terminal_id, term) in self.terminal_by_id.iter() {
-                cfg.terminals
-                    .insert(raw_terminal_ptr(&term),
-                            TerminalInfo {
-                                configured_layers: LayerSet::default(),
-                                terminal_id: *terminal_id,
-                            });
-            }
+            let mut cfg = Configuration::new(&self.shared);
 
             // Now, take the worst_idx first and assignment, stitching in the
             // paths in the prior assignment order, taking care not to assign
@@ -743,7 +748,7 @@ impl Configuration {
     pub fn extract_paths(&self) -> HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>> {
         let mut paths = HashMap::<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>::new();
 
-        for layer_id in self.all_layers.iter() {
+        for layer_id in self.shared.all_layers.iter() {
             paths.insert(*layer_id, Vec::new());
         }
 
@@ -756,8 +761,8 @@ impl Configuration {
                 match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
                     (Some(a), Some(b)) => {
                         if a.layer == b.layer {
-                            let ta = &self.terminal_by_id[&a.terminal_id];
-                            let tb = &self.terminal_by_id[&b.terminal_id];
+                            let ta = &self.shared.terminal_by_id[&a.terminal_id];
+                            let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
                             if let Some(paths) = paths.get_mut(&b.layer) {
                                 paths.push((Arc::clone(ta), Arc::clone(tb)));
