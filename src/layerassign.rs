@@ -573,16 +573,27 @@ impl Configuration {
         let b = b.as_terminal_on_layer().expect("b must be tol");
 
         if a.layer == b.layer {
+
+            // Bias vertical lines to one layer, horizontal to the other
+            let layer_bias = match (a.layer, edge.line.as_ref().unwrap().0.is_verticalish_line()) {
+                // vertical lines are more expensive on layer 0
+                (0, true) => 1.1,
+                // horizontal lines are more expensive on layer 1
+                (1, false) => 1.1,
+                _ => 1.0,
+            };
+
             // We may be colliding with something
             let comp_list = &self.components[a.layer as usize];
             if edge.base_cost > 0.0 {
                 if let Some(contacts) = comp_list.intersects(edge) {
                     let detour = self.detour_cost(comp_list, &contacts);
                     //println!("cost {} detour {}", edge.base_cost, detour);
-                    return (1.0 - ALPHA) * (edge.base_cost + detour);
+                    return (1.0 - ALPHA) * (edge.base_cost + detour) * layer_bias;
                 }
             }
-            (1.0 - ALPHA) * edge.base_cost
+
+            (1.0 - ALPHA) * edge.base_cost * layer_bias
         } else {
             // Moving between levels; impose a token cost to avoid
             // the algorithm from chosing to change levels for no reason.

@@ -118,6 +118,22 @@ impl Shape {
                        })
     }
 
+    pub fn is_verticalish_line(&self) -> bool {
+        if let Some(poly) = self.handle.as_shape::<Polyline>() {
+
+            let vertices = &poly.vertices();
+            let a = &vertices[0];
+            let b = &vertices[1];
+
+            let x = (a.coords.x - b.coords.x).abs();
+            let y = (a.coords.y - b.coords.y).abs();
+
+            y > x * 1.5
+        } else {
+            false
+        }
+    }
+
     pub fn compute_points(&self) -> Vec<Point> {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
             let mut points = Vec::new();
