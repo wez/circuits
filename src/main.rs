@@ -354,7 +354,7 @@ fn go() -> Result<(), Box<Error>> {
 
     {
         let pcb_copy = pcb.clone();
-        thread::spawn(move || { compute_thread(&pcb_copy, Notify { tx: tx }); });
+        thread::spawn(move || compute_thread(&pcb_copy, Notify { tx: tx }));
     }
 
     run_gui(&pcb, rx);
