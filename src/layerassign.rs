@@ -15,6 +15,8 @@ use progress::Progress;
 
 pub type TerminalId = usize;
 const NUM_VIAS: usize = 5;
+// Technically we should use the units and resolution from the pcb for this
+const VIA_MAX_DIST: f64 = 5000.0;
 const ALPHA: f64 = 0.1;
 
 // Use the raw pointer to the terminal when keying into hashes.
@@ -107,7 +109,8 @@ impl Component {
 #[derive(Clone)]
 pub struct ComponentPath {
     pub line: Shape,
-    pub terminal: Arc<Terminal>,
+    pub a: Arc<Terminal>,
+    pub b: Arc<Terminal>,
 }
 
 
@@ -163,9 +166,10 @@ impl ComponentList {
         }
     }
 
-    fn intersects(&self,
-                  edge: &PathEdge)
-                  -> Option<Vec<(Arc<Terminal>, ncollide::query::Contact<Point>)>> {
+    fn intersects
+        (&self,
+         edge: &PathEdge)
+         -> Option<Vec<(Arc<Terminal>, Arc<Terminal>, ncollide::query::Contact<Point>)>> {
         if let Some((ref line, ref bv)) = edge.line {
             let mut candidates = Vec::new();
             self.broad_phase
@@ -176,13 +180,13 @@ impl ComponentList {
                 return Some(candidates
                                 .into_iter()
                                 .filter_map(|path_index| {
-                                                let path = &self.paths[*path_index];
-                                                if let Some(contact) = path.line.contact(line) {
-                                                    Some((Arc::clone(&path.terminal), contact))
-                                                } else {
-                                                    None
-                                                }
-                                            })
+                    let path = &self.paths[*path_index];
+                    if let Some(contact) = path.line.contact(line) {
+                        Some((Arc::clone(&path.a), Arc::clone(&path.b), contact))
+                    } else {
+                        None
+                    }
+                })
                                 .collect());
             }
         }
@@ -245,7 +249,8 @@ impl ComponentList {
         self.paths
             .push(ComponentPath {
                       line: line.clone(),
-                      terminal: Arc::clone(a),
+                      a: Arc::clone(a),
+                      b: Arc::clone(b),
                   });
 
         self.broad_phase
@@ -410,13 +415,23 @@ impl SharedConfiguration {
         let src_point = a.point;
         let sink_point = b.point;
 
-        let x_delta = (sink_point.coords.x - src_point.coords.x) / NUM_VIAS as f64;
-        let y_delta = (sink_point.coords.y - src_point.coords.y) / NUM_VIAS as f64;
+        let num_vias = {
+            let total_distance = na::distance(&src_point, &sink_point);
+            let distance = total_distance / NUM_VIAS as f64;
+            if distance >= VIA_MAX_DIST {
+                (total_distance / VIA_MAX_DIST) as usize
+            } else {
+                NUM_VIAS
+            }
+        };
+
+        let x_delta = (sink_point.coords.x - src_point.coords.x) / num_vias as f64;
+        let y_delta = (sink_point.coords.y - src_point.coords.y) / num_vias as f64;
 
         // Build up the via nodes on each layer.
         let mut via_terminals = Vec::new();
         let mut via_points = Vec::new();
-        for i in 0..NUM_VIAS {
+        for i in 0..num_vias {
             let pt = Point::new(src_point.coords.x + x_delta * i as f64,
                                 src_point.coords.y + y_delta * i as f64);
             via_points.push(pt.clone());
@@ -441,7 +456,7 @@ impl SharedConfiguration {
         }
 
         // Build up/down connectivity between the vias
-        for i in 0..NUM_VIAS {
+        for i in 0..num_vias {
             for layer in 0..self.all_layers.len() - 1 {
                 let via_terminal = via_terminals[i];
                 g.add_edge(Node::via(via_terminal, layer),
@@ -451,7 +466,7 @@ impl SharedConfiguration {
         }
 
         // Build left/right connectivity between the vias
-        for i in 1..NUM_VIAS {
+        for i in 1..num_vias {
             for layer in 0..self.all_layers.len() {
                 let left_term = via_terminals[i - 1];
                 let right_term = via_terminals[i];
@@ -475,9 +490,9 @@ impl SharedConfiguration {
                        Node::via(via_terminals[0], layer),
                        PathEdge::from_points(&src_point, &via_points[0]));
 
-            g.add_edge(Node::via(via_terminals[NUM_VIAS - 1], layer),
+            g.add_edge(Node::via(via_terminals[num_vias - 1], layer),
                        Node::terminal(b_id, layer),
-                       PathEdge::from_points(&via_points[NUM_VIAS - 1], &sink_point));
+                       PathEdge::from_points(&via_points[num_vias - 1], &sink_point));
 
             g.add_edge(Node::terminal(b_id, layer),
                        Node::sink(b_id),
@@ -544,12 +559,25 @@ impl Configuration {
     }
 
     fn detour_cost(&self,
+                   a: &Arc<Terminal>,
+                   b: &Arc<Terminal>,
                    comp_list: &ComponentList,
-                   contacts: &Vec<(Arc<Terminal>, ncollide::query::Contact<Point>)>)
+                   contacts: &Vec<(Arc<Terminal>,
+                                   Arc<Terminal>,
+                                   ncollide::query::Contact<Point>)>)
                    -> f64 {
         let mut cost = 0.0;
-        for &(ref terminal, _) in contacts.iter() {
-            let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal)];
+        for &(ref terminal_a, ref terminal_b, _) in contacts.iter() {
+
+            // Skip self intersection
+            if raw_terminal_ptr(&a) == raw_terminal_ptr(&terminal_a) ||
+               raw_terminal_ptr(&b) == raw_terminal_ptr(&terminal_a) ||
+               raw_terminal_ptr(&a) == raw_terminal_ptr(&terminal_b) ||
+               raw_terminal_ptr(&b) == raw_terminal_ptr(&terminal_b) {
+                continue;
+            }
+
+            let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal_a)];
             let comp = &comp_list.components[component_idx];
 
             // TODO: we can use the contact point to find the shortest path
@@ -585,15 +613,18 @@ impl Configuration {
 
             // We may be colliding with something
             let comp_list = &self.components[a.layer as usize];
+            let mut detour_cost = 0.0;
+
             if edge.base_cost > 0.0 {
+                let term_a = &self.shared.terminal_by_id[&a.terminal_id];
+                let term_b = &self.shared.terminal_by_id[&b.terminal_id];
+
                 if let Some(contacts) = comp_list.intersects(edge) {
-                    let detour = self.detour_cost(comp_list, &contacts);
-                    //println!("cost {} detour {}", edge.base_cost, detour);
-                    return (1.0 - ALPHA) * (edge.base_cost + detour) * layer_bias;
+                    detour_cost = self.detour_cost(&term_a, &term_b, comp_list, &contacts);
                 }
             }
 
-            (1.0 - ALPHA) * edge.base_cost * layer_bias
+            (1.0 - ALPHA) * (edge.base_cost + detour_cost) * layer_bias
         } else {
             // Moving between levels; impose a token cost to avoid
             // the algorithm from chosing to change levels for no reason.
