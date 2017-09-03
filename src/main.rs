@@ -15,6 +15,8 @@ extern crate ncollide;
 extern crate petgraph;
 extern crate ordered_float;
 extern crate piston_window;
+extern crate spade;
+extern crate nalgebra as na;
 
 mod dijkstra;
 mod dsn;
@@ -33,6 +35,11 @@ use self::dsn::Pcb;
 use piston_window::types::{Color, Matrix2d};
 use piston_window::Graphics;
 use std::rc::Rc;
+use std::sync::Arc;
+
+use layerassign::{CDT, CDTVertex, TerminalId};
+use features::Terminal;
+use spade::delaunay::Subdivision;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -122,6 +129,24 @@ impl Notify {
     }
 }
 
+fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId) {
+
+    // Add the polygon that describes the terminal boundaries
+
+    let points = shape.compute_points();
+
+    for i in 0..points.len() - 1 {
+        let a = &points[i];
+        let b = &points[i + 1];
+
+        if a == b {
+            continue;
+        }
+        cdt.add_new_constraint_edge(CDTVertex::new(&a, terminal), CDTVertex::new(&b, terminal));
+    }
+}
+
+
 /// This is where we initiate the heavy lifting.
 /// We do this separately from the UI thread so that we can incrementally
 /// update the UI as we compute the data.
@@ -130,6 +155,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
     let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers);
+    let mut cdt = CDT::new();
 
     {
         let pb = Progress::new("building layer assignment graphs",
@@ -137,9 +163,52 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 
         for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
             for &(ref a, ref b) in twonets {
-                cfg.add_twonet(a, b);
+                let (a_id, b_id) = cfg.add_twonet(a, b);
+                cdt.insert(CDTVertex::new(&a.point, a_id));
+                cdt.insert(CDTVertex::new(&b.point, b_id));
             }
         }
+    }
+    {
+        let pb = Progress::spinner("triangulating");
+
+        // Now add constraints to the CDT for each of the obstacles
+        for shape in pcb.structure.boundary.iter() {
+            pb.inc();
+            let term = Arc::new(Terminal {
+                                    identifier: None,
+                                    net_name: None,
+                                    layers: features.all_layers.clone(),
+                                    shape: shape.shape.clone(),
+                                    point: shape.shape.aabb().center(),
+                                });
+            let id = cfg.add_terminal(&term);
+            cdt_add_obstacle(&mut cdt, &term.shape, id);
+        }
+        for obs in features.obstacles.iter() {
+            pb.inc();
+            let id = cfg.add_terminal(&obs);
+            cdt_add_obstacle(&mut cdt, &obs.shape, id);
+        }
+
+        // Since the CDT is not clone()able and not Sync safe, we need to
+        // extract the triangulated points for later use
+        for edge in cdt.edges() {
+            pb.inc();
+            let from = &*edge.from();
+            let to = &*edge.to();
+
+            cfg.cdt.add_node(*from);
+            cfg.cdt.add_node(*to);
+            cfg.cdt
+                .add_edge(*from, *to, na::distance(&from.point(), &to.point()));
+        }
+
+        for (a, b, _) in cfg.cdt.all_edges() {
+            pb.inc();
+            features.cdt_edges.push((a.point(), b.point()));
+        }
+
     }
 
     let mut cfg = layerassign::Configuration::new(&Rc::new(cfg));
@@ -245,6 +314,13 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
             }
 
             if let Some(ref features) = *features {
+                // Render paths from the CDTGraph
+                const TRANS_BROWN: Color = [193.0 / 255.0, 125.0 / 255.0, 17.0 / 255.0, 0.6];
+                for &(ref a, ref b) in features.cdt_edges.iter() {
+                    let line = geom::Shape::line(a, b).transform(&scale);
+                    draw_polygon(TRANS_BROWN, &line, 0.6, t, g);
+                }
+
                 for obs in features.obstacles.iter() {
                     draw_polygon(RED, &obs.shape.transform(&scale), 0.5, t, g);
                 }

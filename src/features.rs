@@ -33,6 +33,7 @@ pub struct Features {
     pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
     pub all_layers: LayerSet,
     pub paths_by_layer: HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
+    pub cdt_edges: Vec<(geom::Point, geom::Point)>,
 }
 
 impl Eq for Terminal {}
@@ -113,7 +114,6 @@ impl Features {
         // terminals with no net are obstacles, as are any explicit
         // keepout zones designated by the pcb.
         let mut obstacles = Vec::new();
-
         for shape in pcb.structure.keepout.iter() {
             obstacles.push(Arc::new(Terminal {
                                         identifier: None,
@@ -190,6 +190,7 @@ impl Features {
             twonets_by_net: twonets_by_net,
             all_layers: all_layers,
             paths_by_layer: HashMap::new(),
+            cdt_edges: Vec::new(),
         }
     }
 }
