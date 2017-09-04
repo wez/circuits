@@ -18,6 +18,7 @@ extern crate piston_window;
 extern crate spade;
 extern crate nalgebra as na;
 
+mod cdt;
 mod dijkstra;
 mod dsn;
 mod features;
@@ -44,9 +45,9 @@ use piston_window::Graphics;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use cdt::cdt_to_graph;
 use layerassign::{CDT, CDTVertex, TerminalId};
 use features::Terminal;
-use spade::delaunay::Subdivision;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -200,18 +201,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             cdt_add_obstacle(&mut cdt, &pcb, &obs.shape, id);
         }
 
-        // Since the CDT is not clone()able and not Sync safe, we need to
-        // extract the triangulated points for later use
-        for edge in cdt.edges() {
-            pb.inc();
-            let from = &*edge.from();
-            let to = &*edge.to();
-
-            cfg.cdt.add_node(*from);
-            cfg.cdt.add_node(*to);
-            cfg.cdt
-                .add_edge(*from, *to, na::distance(&from.point(), &to.point()));
-        }
+        cfg.cdt = cdt_to_graph(&cdt);
 
         for (a, b, _) in cfg.cdt.all_edges() {
             pb.inc();

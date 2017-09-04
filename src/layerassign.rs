@@ -16,6 +16,7 @@ use spade::HasPosition;
 use petgraph::graphmap::UnGraphMap;
 
 use progress::Progress;
+use cdt;
 
 pub type TerminalId = usize;
 const NUM_VIAS: usize = 5;
@@ -23,37 +24,9 @@ const NUM_VIAS: usize = 5;
 const VIA_MAX_DIST: f64 = 5000.0;
 const ALPHA: f64 = 0.1;
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Ord, PartialOrd)]
-pub struct CDTVertex {
-    x: OrderedFloat<f64>,
-    y: OrderedFloat<f64>,
-    terminal: TerminalId,
-}
-
-impl CDTVertex {
-    pub fn new(point: &Point, terminal: TerminalId) -> CDTVertex {
-        CDTVertex {
-            x: OrderedFloat(point.coords.x),
-            y: OrderedFloat(point.coords.y),
-            terminal: terminal,
-        }
-    }
-
-    pub fn point(&self) -> Point {
-        Point::new(self.x.into(), self.y.into())
-    }
-}
-
-impl HasPosition for CDTVertex {
-    type Point = [f64; 2];
-    fn position(&self) -> [f64; 2] {
-        [self.x.into(), self.y.into()]
-    }
-}
-
-pub type CDT = ConstrainedDelaunayTriangulation<CDTVertex, FloatKernel>;
-pub type CDTGraph = UnGraphMap<CDTVertex, f64>;
-
+pub type CDTVertex = cdt::Vertex<TerminalId>;
+pub type CDT = cdt::CDT<TerminalId>;
+pub type CDTGraph = cdt::CDTGraph<TerminalId>;
 
 // Use the raw pointer to the terminal when keying into hashes.
 fn raw_terminal_ptr(t: &Arc<Terminal>) -> *const Terminal {
