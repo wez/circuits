@@ -324,7 +324,7 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
 
             if let Some(ref features) = *features {
                 // Render paths from the CDTGraph
-                const TRANS_BROWN: Color = [193.0 / 255.0, 125.0 / 255.0, 17.0 / 255.0, 0.6];
+                const TRANS_BROWN: Color = [193.0 / 255.0, 125.0 / 255.0, 17.0 / 255.0, 0.3];
                 for &(ref a, ref b) in features.cdt_edges.iter() {
                     let line = geom::Shape::line(a, b).transform(&scale);
                     draw_polygon(TRANS_BROWN, &line, 0.6, t, g);
