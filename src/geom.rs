@@ -4,6 +4,7 @@ use ncollide::transformation::ToPolyline;
 use std::sync::Arc;
 use geo;
 use geo::convexhull::ConvexHull;
+use polyoffset::{buffer, JoinType};
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
@@ -156,6 +157,13 @@ impl Shape {
         }
         panic!("unsupported shape type");
     }
+
+    pub fn buffer(&self, delta: f64, join_type: JoinType) -> Shape {
+        Shape::polygon(buffer(&self.compute_points(), delta, join_type),
+                       origin(),
+                       None)
+    }
+
 
     // Explicitly compute the convex hull.  The ncollide hull routines use
     // the implicit hull for collision detection purposes, so we use the geo

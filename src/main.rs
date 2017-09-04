@@ -21,11 +21,18 @@ extern crate nalgebra as na;
 mod dijkstra;
 mod dsn;
 mod features;
+
+#[allow(dead_code)]
 mod geom;
 mod layerassign;
 mod twonets;
+
+#[allow(dead_code)]
+mod polyoffset;
+
 mod progress;
 use progress::Progress;
+use polyoffset::{buffer, JoinType};
 
 use std::sync::mpsc;
 use std::thread;
@@ -129,11 +136,13 @@ impl Notify {
     }
 }
 
-fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId) {
+fn cdt_add_obstacle(cdt: &mut CDT, pcb: &Pcb, shape: &geom::Shape, terminal: TerminalId) {
 
     // Add the polygon that describes the terminal boundaries
 
-    let points = shape.compute_points();
+    let points = buffer(&shape.compute_points(),
+                        pcb.structure.rule.clearance,
+                        JoinType::Round(1.0));
 
     for i in 0..points.len() - 1 {
         let a = &points[i];
@@ -183,12 +192,12 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
                                     point: shape.shape.aabb().center(),
                                 });
             let id = cfg.add_terminal(&term);
-            cdt_add_obstacle(&mut cdt, &term.shape, id);
+            cdt_add_obstacle(&mut cdt, &pcb, &term.shape, id);
         }
         for obs in features.obstacles.iter() {
             pb.inc();
             let id = cfg.add_terminal(&obs);
-            cdt_add_obstacle(&mut cdt, &obs.shape, id);
+            cdt_add_obstacle(&mut cdt, &pcb, &obs.shape, id);
         }
 
         // Since the CDT is not clone()able and not Sync safe, we need to
