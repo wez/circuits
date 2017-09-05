@@ -45,9 +45,11 @@ use piston_window::Graphics;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use cdt::cdt_to_graph;
+use cdt::{cdt_to_graph, Vertex};
+use spade::delaunay::EdgeHandle;
 use layerassign::{CDT, CDTVertex, TerminalId};
 use features::Terminal;
+use ncollide::query::Proximity::Disjoint;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -207,7 +209,30 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             cdt_add_obstacle(&mut cdt, &obs.shape, id, clearance);
         }
 
-        cfg.cdt = cdt_to_graph(&cdt);
+        {
+            let edge_cost = |edge: &EdgeHandle<Vertex<TerminalId>>| {
+                let from = &*edge.from();
+                let to = &*edge.to();
+
+                let a = from.point();
+                let b = to.point();
+                let line = geom::Shape::line(&a, &b);
+
+                // Elide lines that cross the obstacles.  The CDT seems to
+                // falsely include these.  Whether I'm misunderstanding how
+                // to use it or not, it's worth processing the graph to ensure
+                // that they are not included in the result.
+                for obs in features.obstacles.iter() {
+                    if line.proximity(&obs.shape, clearance / 2.0) != Disjoint {
+                        return None;
+                    }
+                }
+
+                Some(na::distance(&a, &b))
+            };
+
+            cfg.cdt = cdt_to_graph(&cdt, edge_cost);
+        }
 
         for (a, b, _) in cfg.cdt.all_edges() {
             pb.inc();

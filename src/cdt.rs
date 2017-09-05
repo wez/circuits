@@ -1,4 +1,4 @@
-use spade::delaunay::ConstrainedDelaunayTriangulation;
+use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle};
 use spade::kernels::FloatKernel;
 use spade::HasPosition;
 use petgraph::graphmap::{UnGraphMap, NodeTrait};
@@ -39,20 +39,21 @@ impl<Value> HasPosition for Vertex<Value> {
 pub type CDT<Value> = ConstrainedDelaunayTriangulation<Vertex<Value>, FloatKernel>;
 pub type CDTUnGraph<Value> = UnGraphMap<Vertex<Value>, f64>;
 
-/// Since the CDT is not clone()able and not Sync safe, we need to
-/// extract the triangulated points for later use.
-pub fn cdt_to_graph<Value>(cdt: &CDT<Value>) -> CDTUnGraph<Value>
-    where Value: NodeTrait
+pub fn cdt_to_graph<Value, F>(cdt: &CDT<Value>, mut edge_cost: F) -> CDTUnGraph<Value>
+    where Value: NodeTrait,
+          F: FnMut(&EdgeHandle<Vertex<Value>>) -> Option<f64>
 {
     let mut g = CDTUnGraph::<Value>::new();
 
     for edge in cdt.edges() {
-        let from = &*edge.from();
-        let to = &*edge.to();
+        if let Some(cost) = edge_cost(&edge) {
+            let from = &*edge.from();
+            let to = &*edge.to();
 
-        g.add_node(*from);
-        g.add_node(*to);
-        g.add_edge(*from, *to, na::distance(&from.point(), &to.point()));
+            g.add_node(*from);
+            g.add_node(*to);
+            g.add_edge(*from, *to, cost);
+        }
     }
 
     g
