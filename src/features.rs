@@ -114,14 +114,15 @@ impl Features {
         // terminals with no net are obstacles, as are any explicit
         // keepout zones designated by the pcb.
         let mut obstacles = Vec::new();
+        let mut boundary_obstacles = Vec::new();
         for shape in pcb.structure.keepout.iter() {
-            obstacles.push(Arc::new(Terminal {
-                                        identifier: None,
-                                        net_name: None,
-                                        layers: all_layers.clone(),
-                                        shape: shape.shape.clone(),
-                                        point: shape.shape.aabb().center(),
-                                    }));
+            boundary_obstacles.push(Arc::new(Terminal {
+                                                 identifier: None,
+                                                 net_name: None,
+                                                 layers: all_layers.clone(),
+                                                 shape: shape.shape.clone(),
+                                                 point: shape.shape.aabb().center(),
+                                             }));
         }
 
         // Now build the terminals from the pins in the components
@@ -180,9 +181,16 @@ impl Features {
 
         let mut twonets_by_net = HashMap::new();
         for (netname, mut terminals) in by_net.iter_mut() {
-            let tnets = twonets::compute_2nets(netname, &mut terminals, &all_layers);
+            let tnets = twonets::compute_2nets(netname,
+                                               &mut terminals,
+                                               &all_layers,
+                                               &obstacles,
+                                               pcb.structure.rule.clearance);
             twonets_by_net.insert(netname.clone(), tnets);
         }
+
+        // Merge all the obstacles together
+        obstacles.extend(boundary_obstacles);
 
         Features {
             terminals_by_net: by_net,

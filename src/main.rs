@@ -179,6 +179,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             }
         }
     }
+
     {
         let pb = Progress::spinner("triangulating");
 
@@ -207,7 +208,6 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             pb.inc();
             features.cdt_edges.push((a.point(), b.point()));
         }
-
     }
 
     let mut cfg = layerassign::Configuration::new(&Rc::new(cfg));

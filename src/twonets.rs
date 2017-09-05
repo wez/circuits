@@ -52,6 +52,11 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
     hanan
 }
 
+fn intersects_obstacle(p: &geom::Point, clearance: f64, obstacles: &Vec<Arc<Terminal>>) -> bool {
+    let via = geom::Shape::circle_from_point(&p, clearance / 2.0);
+    obstacles.iter().any(|t| t.shape.intersects(&via))
+}
+
 /// Computes the set of 2nets for a given set of terminals.
 /// This may introduce steiner points and hence may mutate the
 /// input list of terminals.
@@ -59,7 +64,9 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
 /// in `terminals` of connected pairs.
 pub fn compute_2nets(net_name: &String,
                      terminals: &mut Vec<Arc<Terminal>>,
-                     all_layers: &LayerSet)
+                     all_layers: &LayerSet,
+                     obstacles: &Vec<Arc<Terminal>>,
+                     clearance: f64)
                      -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
     let mut terminal_points = Vec::new();
     for t in terminals.iter() {
@@ -68,7 +75,13 @@ pub fn compute_2nets(net_name: &String,
 
     // Use the minimum rectilinear spanning tree as a starting point
     let mut mst = compute_mst(&terminal_points);
-    let h_grid = hanan_grid(&terminal_points);
+
+    // Compute hanan grid, but avoid obstacles
+    let h_grid: Vec<geom::Point> = hanan_grid(&terminal_points)
+        .into_iter()
+        .filter(|p| !intersects_obstacle(p, clearance, &obstacles))
+        .collect();
+
     loop {
         let base_cost = mst_cost(&mst);
 
@@ -136,18 +149,13 @@ pub fn compute_2nets(net_name: &String,
     // Add any steiner points that we created back into the set
     // of terminals.
     for pt in terminal_points.iter().skip(terminals.len()) {
-        terminals
-            .push(Arc::new(Terminal {
-                      identifier: None,
-                      net_name: Some(net_name.clone()),
-                      layers: all_layers.clone(),
-                      shape:
-                          geom::Shape::circle(200.0,
-                                              geom::Location::new(geom::Vector::new(pt.coords.x,
-                                                                                    pt.coords.y),
-                                                                  0.0)),
-                                                                  point: *pt,
-                  }));
+        terminals.push(Arc::new(Terminal {
+                                    identifier: None,
+                                    net_name: Some(net_name.clone()),
+                                    layers: all_layers.clone(),
+                                    point: *pt,
+                                    shape: geom::Shape::circle_from_point(&pt, clearance),
+                                }));
     }
 
     let mut twonets = Vec::new();

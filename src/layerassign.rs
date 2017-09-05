@@ -1,6 +1,6 @@
 use petgraph::graphmap::DiGraphMap;
 use features::{LayerSet, Terminal};
-use geom::{Location, Shape, Point, Vector};
+use geom::{Shape, Point};
 use std::collections::{HashSet, HashMap};
 use ncollide::broad_phase::BroadPhase;
 use ncollide::broad_phase::DBVTBroadPhase;
@@ -10,11 +10,6 @@ use std::sync::Arc;
 use dijkstra::shortest_path;
 use ordered_float::OrderedFloat;
 use std::rc::Rc;
-use spade::delaunay::ConstrainedDelaunayTriangulation;
-use spade::kernels::FloatKernel;
-use spade::HasPosition;
-use petgraph::graphmap::UnGraphMap;
-
 use progress::Progress;
 use cdt;
 
@@ -26,7 +21,7 @@ const ALPHA: f64 = 0.1;
 
 pub type CDTVertex = cdt::Vertex<TerminalId>;
 pub type CDT = cdt::CDT<TerminalId>;
-pub type CDTGraph = cdt::CDTGraph<TerminalId>;
+pub type CDTGraph = cdt::CDTUnGraph<TerminalId>;
 
 // Use the raw pointer to the terminal when keying into hashes.
 fn raw_terminal_ptr(t: &Arc<Terminal>) -> *const Terminal {
@@ -447,9 +442,7 @@ impl SharedConfiguration {
                                 src_point.coords.y + y_delta * i as f64);
             via_points.push(pt.clone());
 
-            let via_shape = Shape::circle(200.0,
-                                          Location::new(Vector::new(pt.coords.x, pt.coords.y),
-                                                        0.0));
+            let via_shape = Shape::circle_from_point(&pt, 200.0);
             let terminal = Arc::new(Terminal {
                                         identifier: None,
                                         net_name: a.net_name.clone(),

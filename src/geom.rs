@@ -4,6 +4,7 @@ use ncollide::transformation::ToPolyline;
 use std::sync::Arc;
 use geo;
 use geo::convexhull::ConvexHull;
+use geo::simplify::Simplify;
 use polyoffset::{buffer, JoinType};
 
 pub type Point = na::Point2<f64>;
@@ -59,6 +60,14 @@ impl Shape {
         Shape {
             handle: ShapeHandle::new(Circle::new(radius)),
             location: location,
+            width: None,
+        }
+    }
+
+    pub fn circle_from_point(p: &Point, radius: f64) -> Shape {
+        Shape {
+            handle: ShapeHandle::new(Circle::new(radius)),
+            location: Location::new(Vector::new(p.coords.x, p.coords.y), na::zero()),
             width: None,
         }
     }
@@ -164,6 +173,21 @@ impl Shape {
                        None)
     }
 
+    pub fn buffer_and_simplify(&self, delta: f64, join_type: JoinType, epsilon: f64) -> Shape {
+        let ls: geo::LineString<_> = buffer(&self.compute_points(), delta, join_type)
+            .iter()
+            .map(geo_point)
+            .collect();
+        let simpler = ls.simplify(&epsilon);
+        Shape::polygon(simpler
+                           .0
+                           .into_iter()
+                           .map(|p| Point::new(p.x(), p.y()))
+                           .collect(),
+                       origin(),
+                       None)
+    }
+
 
     // Explicitly compute the convex hull.  The ncollide hull routines use
     // the implicit hull for collision detection purposes, so we use the geo
@@ -199,6 +223,14 @@ impl Shape {
                                    &other.location,
                                    &*other.handle,
                                    0.0) == ncollide::query::Proximity::Intersecting
+    }
+
+    pub fn proximity(&self, other: &Shape, margin: f64) -> ncollide::query::Proximity {
+        ncollide::query::proximity(&self.location,
+                                   &*self.handle,
+                                   &other.location,
+                                   &*other.handle,
+                                   margin)
     }
 }
 

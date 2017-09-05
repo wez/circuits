@@ -12,7 +12,7 @@ use geom::Point;
 pub struct Vertex<Value> {
     x: OrderedFloat<f64>,
     y: OrderedFloat<f64>,
-    value: Value,
+    pub value: Value,
 }
 
 impl<Value> Vertex<Value> {
@@ -37,14 +37,14 @@ impl<Value> HasPosition for Vertex<Value> {
 }
 
 pub type CDT<Value> = ConstrainedDelaunayTriangulation<Vertex<Value>, FloatKernel>;
-pub type CDTGraph<Value> = UnGraphMap<Vertex<Value>, f64>;
+pub type CDTUnGraph<Value> = UnGraphMap<Vertex<Value>, f64>;
 
 /// Since the CDT is not clone()able and not Sync safe, we need to
 /// extract the triangulated points for later use.
-pub fn cdt_to_graph<Value>(cdt: &CDT<Value>) -> CDTGraph<Value>
+pub fn cdt_to_graph<Value>(cdt: &CDT<Value>) -> CDTUnGraph<Value>
     where Value: NodeTrait
 {
-    let mut g = CDTGraph::<Value>::new();
+    let mut g = CDTUnGraph::<Value>::new();
 
     for edge in cdt.edges() {
         let from = &*edge.from();
