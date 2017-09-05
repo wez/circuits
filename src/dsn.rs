@@ -4,7 +4,7 @@ use std::default::Default;
 extern crate error_chain;
 use std::str;
 extern crate nom;
-use geom;
+use geom::{Point, Shape, Location, Vector, origin};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -190,7 +190,7 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
 #[derive(Debug, Clone)]
 pub struct DsnShape {
     pub layer: String,
-    pub shape: geom::Shape,
+    pub shape: Shape,
 }
 
 
@@ -229,7 +229,7 @@ pub struct Structure {
 pub struct Component {
     pub component_type: String,
     pub instance_name: String,
-    pub position: geom::Location,
+    pub position: Location,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -243,7 +243,7 @@ pub struct PadStack {
 pub struct Pin {
     pub pad_type: String,
     pub pad_num: i64,
-    pub position: geom::Location,
+    pub position: Location,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -303,8 +303,7 @@ impl DsnShape {
 
         Ok(DsnShape {
                layer: layer.clone(),
-               shape: geom::Shape::circle(diameter / 2.0,
-                                          geom::Location::new(geom::Vector::new(x, y), 0.0)),
+               shape: Shape::circle(diameter / 2.0, Location::new(Vector::new(x, y), 0.0)),
            })
     }
 
@@ -322,24 +321,21 @@ impl DsnShape {
         // skip 2 because 0 is the layer that we parsed and index 1 is
         // the aperture width which we extract above.
         for (x, y) in list.iter().skip(2).tuples() {
-            points.push(geom::Point::new(x.as_f64()?, y.as_f64()?));
+            points.push(Point::new(x.as_f64()?, y.as_f64()?));
         }
 
         if drill && points.len() == 2 {
             if let Some(width) = width {
                 return Ok(DsnShape {
                               layer: layer.clone(),
-                              shape: geom::Shape::capsule(width,
-                                                          &points[0],
-                                                          &points[1],
-                                                          geom::origin()),
+                              shape: Shape::capsule(width, &points[0], &points[1], origin()),
                           });
             }
         }
 
         Ok(DsnShape {
                layer: layer.clone(),
-               shape: geom::Shape::polygon(points, geom::origin(), width),
+               shape: Shape::polygon(points, origin(), width),
            })
     }
 
@@ -350,15 +346,15 @@ impl DsnShape {
         let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
         let (top_right_x, top_right_y) = (list[3].as_f64()?, list[4].as_f64()?);
 
-        let points = vec![geom::Point::new(bottom_left_x, bottom_left_y),
-                          geom::Point::new(bottom_left_x, top_right_y),
-                          geom::Point::new(top_right_x, top_right_y),
-                          geom::Point::new(top_right_x, bottom_left_y),
-                          geom::Point::new(bottom_left_x, bottom_left_y)];
+        let points = vec![Point::new(bottom_left_x, bottom_left_y),
+                          Point::new(bottom_left_x, top_right_y),
+                          Point::new(top_right_x, top_right_y),
+                          Point::new(top_right_x, bottom_left_y),
+                          Point::new(bottom_left_x, bottom_left_y)];
 
         Ok(DsnShape {
                layer: layer.clone(),
-               shape: geom::Shape::polygon(points, geom::origin(), None),
+               shape: Shape::polygon(points, origin(), None),
            })
     }
 }
@@ -580,8 +576,7 @@ impl Pcb {
                     .push(Component {
                               component_type: component_type.clone(),
                               instance_name: name.clone(),
-                              position: geom::Location::new(geom::Vector::new(x, y),
-                                                            rotation.to_radians()),
+                              position: Location::new(Vector::new(x, y), rotation.to_radians()),
                           })
             }
         }
@@ -650,9 +645,7 @@ impl Pcb {
             Ok(Pin {
                    pad_type: list[0].as_string()?.clone(),
                    pad_num: list[1].as_i64()?,
-                   position: geom::Location::new(geom::Vector::new(list[2].as_f64()?,
-                                                                   list[3].as_f64()?),
-                                                 0.0),
+                   position: Location::new(Vector::new(list[2].as_f64()?, list[3].as_f64()?), 0.0),
                })
         } else {
             let rot = list[1].as_tagged_list_with_name("rotate")?;
@@ -660,9 +653,8 @@ impl Pcb {
             Ok(Pin {
                    pad_type: list[0].as_string()?.clone(),
                    pad_num: list[2].as_i64()?,
-                   position: geom::Location::new(geom::Vector::new(list[3].as_f64()?,
-                                                                   list[4].as_f64()?),
-                                                 degrees.to_radians()),
+                   position: Location::new(Vector::new(list[3].as_f64()?, list[4].as_f64()?),
+                                           degrees.to_radians()),
                })
         }
     }
