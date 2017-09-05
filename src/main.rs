@@ -33,7 +33,7 @@ mod polyoffset;
 
 mod progress;
 use progress::Progress;
-use polyoffset::{buffer, JoinType};
+use polyoffset::JoinType;
 
 use std::sync::mpsc;
 use std::thread;
@@ -137,13 +137,15 @@ impl Notify {
     }
 }
 
-fn cdt_add_obstacle(cdt: &mut CDT, pcb: &Pcb, shape: &geom::Shape, terminal: TerminalId) {
+fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, clearance: f64) {
 
     // Add the polygon that describes the terminal boundaries
 
-    let points = buffer(&shape.compute_points(),
-                        pcb.structure.rule.clearance,
-                        JoinType::Round(1.0));
+    let points = shape
+        .buffer_and_simplify(clearance,
+                             JoinType::Round(clearance.abs() / 4.0),
+                             clearance.abs() / 4.0)
+        .compute_points();
 
     for i in 0..points.len() - 1 {
         let a = &points[i];
@@ -182,6 +184,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 
     {
         let pb = Progress::spinner("triangulating");
+        let clearance = pcb.structure.rule.clearance;
 
         // Now add constraints to the CDT for each of the obstacles
         for shape in pcb.structure.boundary.iter() {
@@ -194,12 +197,14 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
                                     point: shape.shape.aabb().center(),
                                 });
             let id = cfg.add_terminal(&term);
-            cdt_add_obstacle(&mut cdt, &pcb, &term.shape, id);
+            // Negative clearance so that we fit inside the boundary
+            cdt_add_obstacle(&mut cdt, &term.shape, id, -clearance);
         }
         for obs in features.obstacles.iter() {
             pb.inc();
             let id = cfg.add_terminal(&obs);
-            cdt_add_obstacle(&mut cdt, &pcb, &obs.shape, id);
+            // Positive clearance so that we go around the obstacle
+            cdt_add_obstacle(&mut cdt, &obs.shape, id, clearance);
         }
 
         cfg.cdt = cdt_to_graph(&cdt);
