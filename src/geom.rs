@@ -115,6 +115,10 @@ impl Shape {
                };
     }
 
+    pub fn translate_by_point(&self, pt: &Point) -> Shape {
+        self.translate(&Location::new(Vector::new(pt.coords.x, pt.coords.y), na::zero()))
+    }
+
     pub fn transform(&self, xlate: &Similarity) -> Shape {
         Shape::polygon(self.compute_points()
                            .iter()

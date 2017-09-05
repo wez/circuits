@@ -1,5 +1,5 @@
 use dsn;
-use geom;
+use geom::{Shape, Point};
 use std::collections::{HashMap, HashSet};
 use twonets;
 use std::sync::Arc;
@@ -20,10 +20,10 @@ pub struct Terminal {
     pub layers: LayerSet,
 
     // footprint of the terminal
-    pub shape: geom::Shape,
+    pub shape: Shape,
 
     // center point of the terminal
-    pub point: geom::Point,
+    pub point: Point,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,8 @@ pub struct Features {
     pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
     pub all_layers: LayerSet,
     pub paths_by_layer: HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
-    pub cdt_edges: Vec<(geom::Point, geom::Point)>,
+    pub cdt_edges: Vec<(Point, Point)>,
+    pub via_shape: Shape,
 }
 
 impl Eq for Terminal {}
@@ -102,6 +103,13 @@ impl Features {
         // We make the assumption that the layer indices are sequential,
         // contiguous and start with 0 elsewhere, so let's check that here.
         check_layer_contig(&all_layers);
+
+        let via_shape = &pcb.pad_defs[&pcb.structure.via]
+                             .pads
+                             .values()
+                             .last()
+                             .expect("missing via pad shape")
+                             .shape;
 
         for (netname, net) in pcb.networks.iter() {
             by_net.insert(netname.clone(), Vec::new());
@@ -185,7 +193,8 @@ impl Features {
                                                &mut terminals,
                                                &all_layers,
                                                &obstacles,
-                                               pcb.structure.rule.clearance);
+                                               pcb.structure.rule.clearance,
+                                               &via_shape);
             twonets_by_net.insert(netname.clone(), tnets);
         }
 
@@ -199,6 +208,7 @@ impl Features {
             all_layers: all_layers,
             paths_by_layer: HashMap::new(),
             cdt_edges: Vec::new(),
+            via_shape: via_shape.clone(),
         }
     }
 }

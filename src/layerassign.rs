@@ -406,7 +406,11 @@ impl SharedConfiguration {
         }
     }
 
-    pub fn add_twonet(&mut self, a: &Arc<Terminal>, b: &Arc<Terminal>) -> (TerminalId, TerminalId) {
+    pub fn add_twonet(&mut self,
+                      a: &Arc<Terminal>,
+                      b: &Arc<Terminal>,
+                      via_shape: &Shape)
+                      -> (TerminalId, TerminalId) {
         let mut g = AssignGraphMap::new();
 
         let a_id = self.add_terminal(a);
@@ -442,12 +446,11 @@ impl SharedConfiguration {
                                 src_point.coords.y + y_delta * i as f64);
             via_points.push(pt.clone());
 
-            let via_shape = Shape::circle_from_point(&pt, 200.0);
             let terminal = Arc::new(Terminal {
                                         identifier: None,
                                         net_name: a.net_name.clone(),
                                         layers: self.all_layers.clone(),
-                                        shape: via_shape,
+                                        shape: via_shape.translate_by_point(&pt),
                                         point: pt.clone(),
                                     });
             let id = self.add_terminal(&terminal);

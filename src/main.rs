@@ -173,7 +173,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 
         for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
             for &(ref a, ref b) in twonets {
-                let (a_id, b_id) = cfg.add_twonet(a, b);
+                let (a_id, b_id) = cfg.add_twonet(a, b, &features.via_shape);
                 cdt.insert(CDTVertex::new(&a.point, a_id));
                 cdt.insert(CDTVertex::new(&b.point, b_id));
             }

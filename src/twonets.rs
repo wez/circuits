@@ -66,7 +66,8 @@ pub fn compute_2nets(net_name: &String,
                      terminals: &mut Vec<Arc<Terminal>>,
                      all_layers: &LayerSet,
                      obstacles: &Vec<Arc<Terminal>>,
-                     clearance: f64)
+                     clearance: f64,
+                     via_shape: &geom::Shape)
                      -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
     let mut terminal_points = Vec::new();
     for t in terminals.iter() {
@@ -154,7 +155,7 @@ pub fn compute_2nets(net_name: &String,
                                     net_name: Some(net_name.clone()),
                                     layers: all_layers.clone(),
                                     point: *pt,
-                                    shape: geom::Shape::circle_from_point(&pt, clearance),
+                                    shape: via_shape.translate_by_point(&pt),
                                 }));
     }
 
