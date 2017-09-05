@@ -16,6 +16,11 @@ pub type Vector = na::Vector2<f64>;
 pub type Circle = ncollide::shape::Ball2<f64>;
 pub type Capsule = ncollide::shape::Capsule<f64>;
 
+// Number of points to use when expanding polylines.
+// More points means higher quality curves, but is more expensive
+// when computing things later on.
+const ARC_POINTS : u32 = 12;
+
 pub fn origin() -> Location {
     Location::new(Vector::new(0.0, 0.0), na::zero())
 }
@@ -85,7 +90,7 @@ impl Shape {
         let angle = y.atan2(x) + PI / 2.;
 
         let (mut points, _) = Capsule::new(half_height, radius)
-            .to_polyline(16)
+            .to_polyline(ARC_POINTS)
             .unwrap();
 
         let pt = points[0].clone();
@@ -160,7 +165,7 @@ impl Shape {
         }
 
         if let Some(circle) = self.handle.as_shape::<Circle>() {
-            let mut poly = circle.to_polyline(16);
+            let mut poly = circle.to_polyline(ARC_POINTS);
             poly.transform_by(&self.location);
             let (mut points, _) = poly.unwrap();
             // close the shape!
