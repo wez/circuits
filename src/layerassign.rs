@@ -428,7 +428,7 @@ impl SharedConfiguration {
         let num_vias = {
             let total_distance = na::distance(&src_point, &sink_point);
             let distance = total_distance / NUM_VIAS as f64;
-            if distance >= VIA_MAX_DIST {
+            if false && distance >= VIA_MAX_DIST {
                 (total_distance / VIA_MAX_DIST) as usize
             } else {
                 NUM_VIAS

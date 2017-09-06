@@ -6,6 +6,8 @@ use itertools::Itertools;
 use geom;
 use std::sync::Arc;
 extern crate nalgebra as na;
+use ncollide::query::Proximity::Disjoint;
+
 
 // TODO: consider http://vlsicad.ucsd.edu/Publications/Conferences/142/c142.ps
 
@@ -52,9 +54,15 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
     hanan
 }
 
-fn intersects_obstacle(p: &geom::Point, clearance: f64, obstacles: &Vec<Arc<Terminal>>) -> bool {
-    let via = geom::Shape::circle_from_point(&p, clearance / 2.0);
-    obstacles.iter().any(|t| t.shape.intersects(&via))
+fn intersects_obstacle(p: &geom::Point,
+                       via_shape: &geom::Shape,
+                       clearance: f64,
+                       obstacles: &Vec<Arc<Terminal>>)
+                       -> bool {
+    let via = via_shape.translate_by_point(&p);
+    obstacles
+        .iter()
+        .any(|t| t.shape.proximity(&via, clearance) != Disjoint)
 }
 
 /// Computes the set of 2nets for a given set of terminals.
@@ -65,7 +73,7 @@ fn intersects_obstacle(p: &geom::Point, clearance: f64, obstacles: &Vec<Arc<Term
 pub fn compute_2nets(net_name: &String,
                      terminals: &mut Vec<Arc<Terminal>>,
                      all_layers: &LayerSet,
-                     obstacles: &Vec<Arc<Terminal>>,
+                     all_pads: &Vec<Arc<Terminal>>,
                      clearance: f64,
                      via_shape: &geom::Shape)
                      -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
@@ -77,10 +85,10 @@ pub fn compute_2nets(net_name: &String,
     // Use the minimum rectilinear spanning tree as a starting point
     let mut mst = compute_mst(&terminal_points);
 
-    // Compute hanan grid, but avoid obstacles
+    // Compute hanan grid, but avoid obstacles, including our own pads
     let h_grid: Vec<geom::Point> = hanan_grid(&terminal_points)
         .into_iter()
-        .filter(|p| !intersects_obstacle(p, clearance, &obstacles))
+        .filter(|p| !intersects_obstacle(p, &via_shape, clearance, &all_pads))
         .collect();
 
     loop {

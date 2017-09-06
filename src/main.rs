@@ -160,6 +160,20 @@ fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, cl
     }
 }
 
+fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, clearance: f64) {
+    // Add the polygon that describes the terminal boundaries
+
+    let points = shape
+        .buffer_and_simplify(clearance,
+                             JoinType::Round(clearance.abs() / 4.0),
+                             clearance.abs() / 4.0)
+        .compute_points();
+
+    for pt in points.iter() {
+        cdt.insert(CDTVertex::new(&pt, terminal));
+    }
+}
+
 
 /// This is where we initiate the heavy lifting.
 /// We do this separately from the UI thread so that we can incrementally
@@ -170,6 +184,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 
     let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers);
     let mut cdt = CDT::new();
+    let clearance = pcb.structure.rule.clearance;
 
     {
         let pb = Progress::new("building layer assignment graphs",
@@ -180,13 +195,14 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
                 let (a_id, b_id) = cfg.add_twonet(a, b, &features.via_shape);
                 cdt.insert(CDTVertex::new(&a.point, a_id));
                 cdt.insert(CDTVertex::new(&b.point, b_id));
+                cdt_add_pad(&mut cdt, &a.shape, a_id, clearance);
+                cdt_add_pad(&mut cdt, &b.shape, b_id, clearance);
             }
         }
     }
 
     {
         let pb = Progress::spinner("triangulating");
-        let clearance = pcb.structure.rule.clearance;
 
         // Now add constraints to the CDT for each of the obstacles
         for shape in pcb.structure.boundary.iter() {

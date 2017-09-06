@@ -123,6 +123,7 @@ impl Features {
         // keepout zones designated by the pcb.
         let mut obstacles = Vec::new();
         let mut boundary_obstacles = Vec::new();
+        let mut all_pads = Vec::new();
         for shape in pcb.structure.keepout.iter() {
             boundary_obstacles.push(Arc::new(Terminal {
                                                  identifier: None,
@@ -138,13 +139,15 @@ impl Features {
             let def = &pcb.component_defs[&comp.component_type];
 
             for out in def.keepout.iter() {
-                obstacles.push(Arc::new(Terminal {
-                                            identifier: None,
-                                            net_name: None,
-                                            layers: all_layers.clone(),
-                                            shape: out.shape.translate(&comp.position),
-                                            point: out.shape.aabb().center(),
-                                        }));
+                let term = Arc::new(Terminal {
+                                        identifier: None,
+                                        net_name: None,
+                                        layers: all_layers.clone(),
+                                        shape: out.shape.translate(&comp.position),
+                                        point: out.shape.aabb().center(),
+                                    });
+                all_pads.push(Arc::clone(&term));
+                obstacles.push(term);
             }
 
             for pin in def.pins.iter() {
@@ -178,10 +181,14 @@ impl Features {
                     let t = terminal.unwrap();
                     if let Some(net) = net_name {
                         if let Some(v) = by_net.get_mut(&net) {
-                            v.push(Arc::new(t));
+                            let term = Arc::new(t);
+                            all_pads.push(Arc::clone(&term));
+                            v.push(term);
                         }
                     } else {
-                        obstacles.push(Arc::new(t));
+                        let term = Arc::new(t);
+                        all_pads.push(Arc::clone(&term));
+                        obstacles.push(term);
                     }
                 }
             }
@@ -192,7 +199,7 @@ impl Features {
             let tnets = twonets::compute_2nets(netname,
                                                &mut terminals,
                                                &all_layers,
-                                               &obstacles,
+                                               &all_pads,
                                                pcb.structure.rule.clearance,
                                                &via_shape);
             twonets_by_net.insert(netname.clone(), tnets);

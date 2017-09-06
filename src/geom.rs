@@ -19,7 +19,7 @@ pub type Capsule = ncollide::shape::Capsule<f64>;
 // Number of points to use when expanding polylines.
 // More points means higher quality curves, but is more expensive
 // when computing things later on.
-const ARC_POINTS: u32 = 12;
+const ARC_POINTS: u32 = 9;
 
 pub fn origin() -> Location {
     Location::new(Vector::new(0.0, 0.0), na::zero())
