@@ -6,6 +6,11 @@ use geo;
 use geo::convexhull::ConvexHull;
 use geo::simplify::Simplify;
 use polyoffset::{buffer, JoinType};
+use std::fmt::{Debug, Formatter, Error};
+use std::result::Result;
+use ncollide::query::{contact, proximity, Contact, Proximity};
+use ncollide::query::Proximity::Intersecting;
+use ncollide::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
@@ -103,13 +108,13 @@ impl Shape {
     }
 
     // returns the axis-aligned bounding-box
-    pub fn aabb(&self) -> ncollide::bounding_volume::AABB<Point> {
-        ncollide::bounding_volume::aabb(&*self.handle, &self.location)
+    pub fn aabb(&self) -> AABB<Point> {
+        aabb(&*self.handle, &self.location)
     }
 
     // returns the bounding sphere
-    pub fn bounding_sphere(&self) -> ncollide::bounding_volume::BoundingSphere<Point> {
-        ncollide::bounding_volume::bounding_sphere(&*self.handle, &self.location)
+    pub fn bounding_sphere(&self) -> BoundingSphere<Point> {
+        bounding_sphere(&*self.handle, &self.location)
     }
 
     pub fn translate(&self, location: &Location) -> Shape {
@@ -218,28 +223,28 @@ impl Shape {
         Shape::polygon(points, origin(), None)
     }
 
-    pub fn contact(&self, other: &Shape) -> Option<ncollide::query::Contact<Point>> {
-        ncollide::query::contact(&self.location,
-                                 &*self.handle,
-                                 &other.location,
-                                 &*other.handle,
-                                 1.0)
+    pub fn contact(&self, other: &Shape) -> Option<Contact<Point>> {
+        contact(&self.location,
+                &*self.handle,
+                &other.location,
+                &*other.handle,
+                1.0)
     }
 
     pub fn intersects(&self, other: &Shape) -> bool {
-        ncollide::query::proximity(&self.location,
-                                   &*self.handle,
-                                   &other.location,
-                                   &*other.handle,
-                                   0.0) == ncollide::query::Proximity::Intersecting
+        proximity(&self.location,
+                  &*self.handle,
+                  &other.location,
+                  &*other.handle,
+                  0.0) == Intersecting
     }
 
-    pub fn proximity(&self, other: &Shape, margin: f64) -> ncollide::query::Proximity {
-        ncollide::query::proximity(&self.location,
-                                   &*self.handle,
-                                   &other.location,
-                                   &*other.handle,
-                                   margin)
+    pub fn proximity(&self, other: &Shape, margin: f64) -> Proximity {
+        proximity(&self.location,
+                  &*self.handle,
+                  &other.location,
+                  &*other.handle,
+                  margin)
     }
 }
 
@@ -249,8 +254,8 @@ impl Clone for Shape {
     }
 }
 
-impl ::std::fmt::Debug for Shape {
-    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::result::Result<(), ::std::fmt::Error> {
+impl Debug for Shape {
+    fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error> {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
             write!(fmt,
                    "Polyline with {} vertices at {}",
