@@ -1,6 +1,6 @@
 use petgraph::graphmap::DiGraphMap;
 use features::{LayerSet, Terminal};
-use geom::{Shape, Point};
+use geom::{Shape, Point, OrderedPoint};
 use std::collections::{HashSet, HashMap};
 use ncollide::broad_phase::BroadPhase;
 use ncollide::broad_phase::DBVTBroadPhase;
@@ -93,21 +93,6 @@ pub struct Component {
     pub terminals: HashSet<Arc<Terminal>>,
     pub paths: Vec<(Arc<Terminal>, Arc<Terminal>, Shape)>,
     pub hull: Shape,
-    pub hull_perimeter: f64,
-}
-
-impl Component {
-    fn compute_perimeter(&mut self) {
-        let points = self.hull.compute_points();
-        let mut cost = 0.0;
-        for i in 0..points.len() - 1 {
-            let a = &points[i];
-            let b = &points[i + 1];
-            cost += na::distance(a, b);
-        }
-
-        self.hull_perimeter = cost;
-    }
 }
 
 #[derive(Clone)]
@@ -172,7 +157,8 @@ impl ComponentList {
 
     fn intersects
         (&self,
-         edge: &PathEdge)
+         edge: &PathEdge,
+         clearance: f64)
          -> Option<Vec<(Arc<Terminal>, Arc<Terminal>, ncollide::query::Contact<Point>)>> {
         if let Some((ref line, ref bv)) = edge.line {
             let mut candidates = Vec::new();
@@ -185,7 +171,7 @@ impl ComponentList {
                                 .into_iter()
                                 .filter_map(|path_index| {
                     let path = &self.paths[*path_index];
-                    if let Some(contact) = path.line.contact(line) {
+                    if let Some(contact) = path.line.contact(line, clearance) {
                         Some((Arc::clone(&path.a), Arc::clone(&path.b), contact))
                     } else {
                         None
@@ -238,7 +224,6 @@ impl ComponentList {
             }
         }
     }
-
 
     fn add_path(&mut self, a: &Arc<Terminal>, b: &Arc<Terminal>) {
         // Add the path between two terminals.
@@ -295,19 +280,15 @@ impl ComponentList {
                 .map(|&(_, _, ref shape)| shape.clone())
                 .collect();
             target_comp.hull = Shape::convex_hull(&lines);
-            target_comp.compute_perimeter();
-
 
         } else {
             // Create a new component
             let comp_idx = self.components.len();
-            let mut comp = Component {
+            let comp = Component {
                 terminals: hashset!{Arc::clone(a), Arc::clone(b)},
                 paths: vec![(Arc::clone(a), Arc::clone(b), line.clone())],
                 hull: line,
-                hull_perimeter: 0.0,
             };
-            comp.compute_perimeter();
             self.components.push(comp);
 
             self.terminal_to_component
@@ -377,12 +358,14 @@ pub struct SharedConfiguration {
     // Indices are referenced via TwoNetId
     two_nets: Vec<TwoNet>,
     all_layers: LayerSet,
+    clearance: f64,
 }
 
 impl SharedConfiguration {
-    pub fn new(all_layers: &LayerSet) -> SharedConfiguration {
+    pub fn new(all_layers: &LayerSet, clearance: f64) -> SharedConfiguration {
         let mut cfg = SharedConfiguration::default();
         cfg.all_layers = all_layers.clone();
+        cfg.clearance = clearance;
         cfg
     }
 
@@ -428,7 +411,7 @@ impl SharedConfiguration {
         let num_vias = {
             let total_distance = na::distance(&src_point, &sink_point);
             let distance = total_distance / NUM_VIAS as f64;
-            if false && distance >= VIA_MAX_DIST {
+            if distance >= VIA_MAX_DIST {
                 (total_distance / VIA_MAX_DIST) as usize
             } else {
                 NUM_VIAS
@@ -577,22 +560,36 @@ impl Configuration {
         let mut cost = 0.0;
         for &(ref terminal_a, ref terminal_b, _) in contacts.iter() {
 
+            // If we would legitimately be forming a component, there
+            // is no need to detour
+            if terminal_a.net_name == a.net_name || terminal_b.net_name == a.net_name ||
+               terminal_a.net_name == b.net_name ||
+               terminal_b.net_name == b.net_name {
+                continue;
+            }
             // Skip self intersection
-            if raw_terminal_ptr(&a) == raw_terminal_ptr(&terminal_a) ||
-               raw_terminal_ptr(&b) == raw_terminal_ptr(&terminal_a) ||
-               raw_terminal_ptr(&a) == raw_terminal_ptr(&terminal_b) ||
-               raw_terminal_ptr(&b) == raw_terminal_ptr(&terminal_b) {
+            let raw_a = raw_terminal_ptr(&a);
+            let raw_b = raw_terminal_ptr(&b);
+            let raw_t_a = raw_terminal_ptr(&terminal_a);
+            let raw_t_b = raw_terminal_ptr(&terminal_b);
+
+            if raw_a == raw_t_a || raw_a == raw_t_b || raw_b == raw_t_a || raw_b == raw_t_b {
                 continue;
             }
 
             let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal_a)];
             let comp = &comp_list.components[component_idx];
 
-            // TODO: we can use the contact point to find the shortest path
-            // around the perimeter.  For now we just take the perimeter
-            // as an estimation.
-
-            cost += comp.hull_perimeter / 2.0;
+            if let Some(detour) = comp.hull
+                   .detour_path(&a.point, &b.point, self.shared.clearance) {
+                let (detour_cost, _) = shortest_path(&detour,
+                                                     OrderedPoint::from_point(&a.point),
+                                                     OrderedPoint::from_point(&b.point),
+                                                     |(_, _, cost)| *cost,
+                                                     None)
+                        .expect("must be a path");
+                cost += detour_cost;
+            }
         }
 
         cost
@@ -609,7 +606,6 @@ impl Configuration {
         let b = b.as_terminal_on_layer().expect("b must be tol");
 
         if a.layer == b.layer {
-
             // Bias vertical lines to one layer, horizontal to the other
             let layer_bias = match (a.layer, edge.line.as_ref().unwrap().0.is_verticalish_line()) {
                 // vertical lines are more expensive on layer 0
@@ -627,7 +623,7 @@ impl Configuration {
                 let term_a = &self.shared.terminal_by_id[&a.terminal_id];
                 let term_b = &self.shared.terminal_by_id[&b.terminal_id];
 
-                if let Some(contacts) = comp_list.intersects(edge) {
+                if let Some(contacts) = comp_list.intersects(edge, self.shared.clearance) {
                     detour_cost = self.detour_cost(&term_a, &term_b, comp_list, &contacts);
                 }
             }

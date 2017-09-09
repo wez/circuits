@@ -182,9 +182,9 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let mut features = features::Features::from_pcb(&pcb);
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
-    let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers);
-    let mut cdt = CDT::new();
     let clearance = pcb.structure.rule.clearance;
+    let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers, clearance);
+    let mut cdt = CDT::new();
 
     {
         let pb = Progress::new("building layer assignment graphs",

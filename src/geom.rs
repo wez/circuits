@@ -11,6 +11,9 @@ use std::result::Result;
 use ncollide::query::{contact, proximity, Contact, Proximity};
 use ncollide::query::Proximity::Intersecting;
 use ncollide::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
+use petgraph::graphmap::UnGraphMap;
+use ordered_float::OrderedFloat;
+use std::cmp::Ordering;
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
@@ -36,6 +39,32 @@ pub fn manhattan_distance(a: &Point, b: &Point) -> f64 {
     (a.coords.x - b.coords.x).abs() + (a.coords.y - b.coords.y).abs()
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Ord, PartialOrd)]
+pub struct OrderedPoint {
+    pub x: OrderedFloat<f64>,
+    pub y: OrderedFloat<f64>,
+}
+
+impl OrderedPoint {
+    pub fn new(x: f64, y: f64) -> OrderedPoint {
+        OrderedPoint {
+            x: OrderedFloat(x),
+            y: OrderedFloat(y),
+        }
+    }
+
+    pub fn from_point(p: &Point) -> OrderedPoint {
+        OrderedPoint {
+            x: OrderedFloat(p.coords.x),
+            y: OrderedFloat(p.coords.y),
+        }
+    }
+
+    pub fn point(&self) -> Point {
+        Point::new(self.x.into(), self.y.into())
+    }
+}
+
 pub struct Shape {
     pub handle: ShapeHandle,
     pub location: Location,
@@ -45,6 +74,13 @@ pub struct Shape {
 // Convert geom::Point to geo::Point
 fn geo_point(p: &Point) -> geo::Point<f64> {
     geo::Point::new(p.coords.x, p.coords.y)
+}
+
+fn order_by_dist(a: &Point, b: &Point, relative: &Point) -> Ordering {
+    let dist_a = OrderedFloat(na::distance(a, relative));
+    let dist_b = OrderedFloat(na::distance(b, relative));
+
+    dist_a.cmp(&dist_b)
 }
 
 impl Shape {
@@ -223,12 +259,39 @@ impl Shape {
         Shape::polygon(points, origin(), None)
     }
 
-    pub fn contact(&self, other: &Shape) -> Option<Contact<Point>> {
+    pub fn contact(&self, other: &Shape, clearance: f64) -> Option<Contact<Point>> {
         contact(&self.location,
                 &*self.handle,
                 &other.location,
                 &*other.handle,
-                1.0)
+                clearance)
+    }
+
+    /// Computes the exterior points of the shape, then computes each
+    /// possible point of contact between other and self.
+    /// Returns (contacts, exterior_points)
+    pub fn all_contacts(&self, other: &Shape, clearance: f64) -> (Vec<Point>, Vec<Point>) {
+        let points = self.compute_points();
+        let mut contacts = Vec::new();
+
+        for i in 0..points.len() {
+            let pt = &points[i];
+            let prior = if i == 0 { points.len() - 1 } else { i - 1 };
+
+            let prior_pt = &points[prior];
+
+            let line = Shape::line(prior_pt, pt);
+
+            if let Some(contact) = contact(&line.location,
+                                           &*line.handle,
+                                           &other.location,
+                                           &*other.handle,
+                                           clearance) {
+                contacts.push(contact.world1);
+            }
+        }
+
+        (contacts, points)
     }
 
     pub fn intersects(&self, other: &Shape) -> bool {
@@ -245,6 +308,74 @@ impl Shape {
                   &other.location,
                   &*other.handle,
                   margin)
+    }
+
+    /// Given pair of points A and B, determine the detour graph.
+    /// We do this by computing the points of intersection with self
+    /// from a->b and from b->a.  We then connect these to the closest
+    /// points on the polygon perimeter and return a graph with edges
+    /// set to the distance between the points.
+    pub fn detour_path(&self,
+                       a: &Point,
+                       b: &Point,
+                       clearance: f64)
+                       -> Option<UnGraphMap<OrderedPoint, f64>> {
+        let line = Shape::line(a, b);
+
+        let (contacts, points) = self.all_contacts(&line, clearance);
+
+        if contacts.len() == 0 {
+            return None;
+        }
+
+        let mut graph = UnGraphMap::new();
+
+        for i in 0..points.len() {
+            let pt = &points[i];
+            let prior = if i == 0 { points.len() - 1 } else { i - 1 };
+
+            let prior_pt = &points[prior];
+            graph.add_edge(OrderedPoint::from_point(prior_pt),
+                           OrderedPoint::from_point(pt),
+                           na::distance(prior_pt, pt));
+        }
+
+        // Find the closest point of contact to a, b respectively
+        let contact_a = contacts
+            .iter()
+            .min_by(|ca, cb| order_by_dist(&ca, &cb, &a))
+            .unwrap();
+        graph.add_edge(OrderedPoint::from_point(a),
+                       OrderedPoint::from_point(&contact_a),
+                       na::distance(a, contact_a));
+
+        let contact_b = contacts
+            .iter()
+            .min_by(|ca, cb| order_by_dist(&ca, &cb, &b))
+            .unwrap();
+        graph.add_edge(OrderedPoint::from_point(&contact_b),
+                       OrderedPoint::from_point(b),
+                       na::distance(contact_b, b));
+
+        // Find the closest vertex to contact_a, contact_b respectively.
+        let close_a = points
+            .iter()
+            .min_by(|a, b| order_by_dist(&a, &b, &contact_a))
+            .unwrap();
+        graph.add_edge(OrderedPoint::from_point(&contact_a),
+                       OrderedPoint::from_point(close_a),
+                       na::distance(contact_a, &close_a));
+
+        let close_b = points
+            .iter()
+            .min_by(|a, b| order_by_dist(&a, &b, &contact_b))
+            .unwrap();
+        graph.add_edge(OrderedPoint::from_point(&contact_b),
+                       OrderedPoint::from_point(close_b),
+                       na::distance(contact_b, &close_b));
+
+        Some(graph)
+
     }
 }
 

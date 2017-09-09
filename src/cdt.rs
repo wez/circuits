@@ -2,37 +2,34 @@ use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle};
 use spade::kernels::FloatKernel;
 use spade::HasPosition;
 use petgraph::graphmap::{UnGraphMap, NodeTrait};
-use ordered_float::OrderedFloat;
 extern crate nalgebra as na;
 use spade::delaunay::Subdivision;
 
-use geom::Point;
+use geom::{Point, OrderedPoint};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Ord, PartialOrd)]
 pub struct Vertex<Value> {
-    x: OrderedFloat<f64>,
-    y: OrderedFloat<f64>,
+    pub p: OrderedPoint,
     pub value: Value,
 }
 
 impl<Value> Vertex<Value> {
     pub fn new(point: &Point, value: Value) -> Vertex<Value> {
         Vertex {
-            x: OrderedFloat(point.coords.x),
-            y: OrderedFloat(point.coords.y),
+            p: OrderedPoint::from_point(point),
             value: value,
         }
     }
 
     pub fn point(&self) -> Point {
-        Point::new(self.x.into(), self.y.into())
+        self.p.point()
     }
 }
 
 impl<Value> HasPosition for Vertex<Value> {
     type Point = [f64; 2];
     fn position(&self) -> [f64; 2] {
-        [self.x.into(), self.y.into()]
+        [self.p.x.into(), self.p.y.into()]
     }
 }
 
