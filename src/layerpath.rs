@@ -32,10 +32,64 @@ pub struct TerminalInfo {
     pub incident: Vec<OrderedPoint>,
 }
 
+/// Given an ordering of twonet paths, re-order the paths such that
+/// the result is planar.  This works by considering whether each
+/// twonet is "open" or "closed".  A "closed" twonet is one that closes
+/// a path between two terminals when considering the twonets preceeding
+/// it.  Otherwise (eg: it is blocked by those before it) it is "open".
+/// The open nets are brought to the front of the ordering while
+/// maintaining the relative ordering of the open and closed sets respectively.
+fn planarity_enforcement_operator(twonets: &Vec<Path>) -> Vec<Path> {
+    type Broad = DBVTBroadPhase<Point, AABB<Point>, usize>;
+    let mut broad = Broad::new(0.0, false);
+    let mut lines = Vec::new();
+
+    let mut open = Vec::new();
+    let mut closed = Vec::new();
+
+    for path in twonets.iter() {
+        let line = Shape::line(&path.0.point(), &path.1.point());
+        let idx = lines.len();
+        let bv = line.aabb();
+        let mut is_open = false;
+
+        {
+            let mut candidates = Vec::new();
+            broad.interferences_with_bounding_volume(&bv, &mut candidates);
+
+            for lineidx in candidates.iter().map(|x| **x) {
+                let other_path = &twonets[lineidx];
+                if other_path.0 == path.0 || other_path.0 == path.1 ||
+                    other_path.1 == path.0 || other_path.1 == path.1 {
+                    // We're expanding this twonet into a larger component
+                    continue;
+                }
+                if let Some(_) = line.contact(&lines[lineidx], 0.0) {
+                    // Blocked by a preceeding item
+                    is_open = true;
+                    break;
+                }
+            }
+        }
+
+        broad.deferred_add(idx, bv, idx);
+        lines.push(line);
+        broad.update(&mut |a, b| a != b, &mut |_, _, _| {});
+
+        if is_open {
+            open.push(*path);
+        } else {
+            closed.push(*path);
+        }
+    }
+
+    open.append(&mut closed);
+    open
+}
+
 struct Assignment {
     assignment: HashMap<OrderedPoint, TerminalInfo>,
     broad_phase: TerminalBroadPhase,
-    //    paths: Vec<(Arc<Terminal>, Arc<Terminal>)>,
     paths: Vec<Path>,
     path_lines: Vec<Shape>,
 }
