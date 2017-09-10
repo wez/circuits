@@ -14,6 +14,7 @@ use ncollide::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
 use petgraph::graphmap::UnGraphMap;
 use ordered_float::OrderedFloat;
 use std::cmp::Ordering;
+use spade::HasPosition;
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
@@ -62,6 +63,13 @@ impl OrderedPoint {
 
     pub fn point(&self) -> Point {
         Point::new(self.x.into(), self.y.into())
+    }
+}
+
+impl HasPosition for OrderedPoint {
+    type Point = [f64; 2];
+    fn position(&self) -> [f64; 2] {
+        [self.x.into(), self.y.into()]
     }
 }
 

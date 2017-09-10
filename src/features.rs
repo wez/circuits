@@ -1,5 +1,5 @@
 use dsn;
-use geom::{Shape, Point};
+use geom::{Shape, Point, OrderedPoint};
 use std::collections::{HashMap, HashSet};
 use twonets;
 use std::sync::Arc;
@@ -30,9 +30,10 @@ pub struct Terminal {
 pub struct Features {
     pub terminals_by_net: HashMap<String, Vec<Arc<Terminal>>>,
     pub obstacles: Vec<Arc<Terminal>>,
+    pub all_pads: Vec<Arc<Terminal>>,
     pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
     pub all_layers: LayerSet,
-    pub paths_by_layer: HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
+    pub paths_by_layer: HashMap<u8, Vec<(OrderedPoint, OrderedPoint)>>,
     pub cdt_edges: Vec<(Point, Point)>,
     pub via_shape: Shape,
 }
@@ -211,6 +212,7 @@ impl Features {
         Features {
             terminals_by_net: by_net,
             obstacles: obstacles,
+            all_pads: all_pads,
             twonets_by_net: twonets_by_net,
             all_layers: all_layers,
             paths_by_layer: HashMap::new(),

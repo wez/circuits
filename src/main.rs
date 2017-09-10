@@ -18,7 +18,6 @@ extern crate piston_window;
 extern crate spade;
 extern crate nalgebra as na;
 
-mod cdt;
 mod dijkstra;
 mod dsn;
 mod features;
@@ -26,6 +25,7 @@ mod features;
 #[allow(dead_code)]
 mod geom;
 mod layerassign;
+mod layerpath;
 mod twonets;
 
 #[allow(dead_code)]
@@ -45,11 +45,11 @@ use piston_window::Graphics;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use cdt::{cdt_to_graph, Vertex};
-use spade::delaunay::EdgeHandle;
-use layerassign::{CDT, CDTVertex, TerminalId};
 use features::Terminal;
 use ncollide::query::Proximity::Disjoint;
+use layerpath::{PathConfiguration, CDTGraph};
+use spade::delaunay::Subdivision;
+use geom::OrderedPoint;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -139,7 +139,11 @@ impl Notify {
     }
 }
 
-fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, clearance: f64) {
+use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle};
+use spade::kernels::FloatKernel;
+type CDT = ConstrainedDelaunayTriangulation<OrderedPoint, FloatKernel>;
+
+fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, clearance: f64) {
 
     // Add the polygon that describes the terminal boundaries
 
@@ -156,11 +160,11 @@ fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, cl
         if a == b {
             continue;
         }
-        cdt.add_new_constraint_edge(CDTVertex::new(&a, terminal), CDTVertex::new(&b, terminal));
+        cdt.add_new_constraint_edge(OrderedPoint::from_point(a), OrderedPoint::from_point(&b));
     }
 }
 
-fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, clearance: f64) {
+fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal_point: &geom::Point, clearance: f64) {
     // Add the polygon that describes the terminal boundaries
 
     let points = shape
@@ -170,7 +174,24 @@ fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal: TerminalId, clearan
         .compute_points();
 
     for pt in points.iter() {
-        cdt.insert(CDTVertex::new(&pt, terminal));
+        cdt.insert(OrderedPoint::from_point(&pt));
+
+        // Make sure that the terminal center is reachable from
+        // the pad outline
+        cdt.add_new_constraint_edge(OrderedPoint::from_point(&pt),
+                                    OrderedPoint::from_point(&terminal_point));
+    }
+}
+
+fn cdt_to_graph<F>(graph: &mut CDTGraph, cdt: &CDT, mut edge_cost: F)
+    where F: FnMut(&EdgeHandle<OrderedPoint>) -> Option<f64>
+{
+    for edge in cdt.edges() {
+        if let Some(cost) = edge_cost(&edge) {
+            let from = &*edge.from();
+            let to = &*edge.to();
+            graph.add_edge(*from, *to, cost);
+        }
     }
 }
 
@@ -185,6 +206,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let clearance = pcb.structure.rule.clearance;
     let mut cfg = layerassign::SharedConfiguration::new(&features.all_layers, clearance);
     let mut cdt = CDT::new();
+    let mut cdt_graph = CDTGraph::new();
 
     {
         let pb = Progress::new("building layer assignment graphs",
@@ -192,17 +214,17 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
 
         for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
             for &(ref a, ref b) in twonets {
-                let (a_id, b_id) = cfg.add_twonet(a, b, &features.via_shape);
-                cdt.insert(CDTVertex::new(&a.point, a_id));
-                cdt.insert(CDTVertex::new(&b.point, b_id));
-                cdt_add_pad(&mut cdt, &a.shape, a_id, clearance);
-                cdt_add_pad(&mut cdt, &b.shape, b_id, clearance);
+                cfg.add_twonet(a, b, &features.via_shape);
+                cdt.insert(OrderedPoint::from_point(&a.point));
+                cdt.insert(OrderedPoint::from_point(&b.point));
+                cdt_add_pad(&mut cdt, &a.shape, &a.point, clearance);
+                cdt_add_pad(&mut cdt, &b.shape, &b.point, clearance);
             }
         }
     }
 
     {
-        let pb = Progress::spinner("triangulating");
+        let pb = Progress::spinner("triangulating stage 1");
 
         // Now add constraints to the CDT for each of the obstacles
         for shape in pcb.structure.boundary.iter() {
@@ -214,45 +236,15 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
                                     shape: shape.shape.clone(),
                                     point: shape.shape.aabb().center(),
                                 });
-            let id = cfg.add_terminal(&term);
+            cfg.add_terminal(&term);
             // Negative clearance so that we fit inside the boundary
-            cdt_add_obstacle(&mut cdt, &term.shape, id, -clearance);
+            cdt_add_obstacle(&mut cdt, &term.shape, -clearance);
         }
         for obs in features.obstacles.iter() {
             pb.inc();
-            let id = cfg.add_terminal(&obs);
+            cfg.add_terminal(&obs);
             // Positive clearance so that we go around the obstacle
-            cdt_add_obstacle(&mut cdt, &obs.shape, id, clearance);
-        }
-
-        {
-            let edge_cost = |edge: &EdgeHandle<Vertex<TerminalId>>| {
-                let from = &*edge.from();
-                let to = &*edge.to();
-
-                let a = from.point();
-                let b = to.point();
-                let line = geom::Shape::line(&a, &b);
-
-                // Elide lines that cross the obstacles.  The CDT seems to
-                // falsely include these.  Whether I'm misunderstanding how
-                // to use it or not, it's worth processing the graph to ensure
-                // that they are not included in the result.
-                for obs in features.obstacles.iter() {
-                    if line.proximity(&obs.shape, clearance / 2.0) != Disjoint {
-                        return None;
-                    }
-                }
-
-                Some(na::distance(&a, &b))
-            };
-
-            cfg.cdt = cdt_to_graph(&cdt, edge_cost);
-        }
-
-        for (a, b, _) in cfg.cdt.all_edges() {
-            pb.inc();
-            features.cdt_edges.push((a.point(), b.point()));
+            cdt_add_obstacle(&mut cdt, &obs.shape, clearance);
         }
     }
 
@@ -275,6 +267,69 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
         } else {
             break;
         }
+    }
+
+    {
+        let pb = Progress::spinner("triangulating stage 2");
+
+        // Add in points for the resolved twonet paths
+        for (_, twonets) in features.paths_by_layer.iter() {
+            for &(ref a, ref b) in twonets.iter() {
+                cdt.insert(*a);
+                cdt.insert(*b);
+            }
+        }
+
+        {
+            let edge_cost = |edge: &EdgeHandle<OrderedPoint>| {
+                let from = &*edge.from();
+                let to = &*edge.to();
+
+                let a = from.point();
+                let b = to.point();
+                let line = geom::Shape::line(&a, &b);
+
+                // Elide lines that cross the obstacles.  The CDT seems to
+                // falsely include these.  Whether I'm misunderstanding how
+                // to use it or not, it's worth processing the graph to ensure
+                // that they are not included in the result.
+                for obs in features.obstacles.iter() {
+                    if line.proximity(&obs.shape, clearance / 2.0) != Disjoint {
+                        // return None;
+                    }
+                }
+
+                Some(na::distance(&a, &b))
+            };
+
+            cdt_to_graph(&mut cdt_graph, &cdt, edge_cost);
+        }
+
+        for (a, b, _) in cdt_graph.all_edges() {
+            pb.inc();
+            features.cdt_edges.push((a.point(), b.point()));
+        }
+        notifier.send(ProgressUpdate::Feature(features.clone()));
+    }
+
+
+    let cdt_graph = Rc::new(cdt_graph);
+    let paths_by_layer = features.paths_by_layer.clone();
+
+    for (layer, twonets) in paths_by_layer.iter() {
+        println!("Starting path assignment for layer {} with {} twonets",
+                 layer,
+                 twonets.len());
+
+        let mut path_config = PathConfiguration::new(clearance / 100.0,
+                                                     Rc::clone(&cdt_graph),
+                                                     &twonets,
+                                                     &features.all_pads);
+        path_config.initial_assignment();
+        if let Some(p) = features.paths_by_layer.get_mut(layer) {
+            *p = path_config.get_paths().clone();
+        }
+        notifier.send(ProgressUpdate::Feature(features.clone()));
     }
 
     println!("All Done");
@@ -360,10 +415,9 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
 
             if let Some(ref features) = *features {
                 // Render paths from the CDTGraph
-                const TRANS_BROWN: Color = [193.0 / 255.0, 125.0 / 255.0, 17.0 / 255.0, 0.3];
                 for &(ref a, ref b) in features.cdt_edges.iter() {
                     let line = geom::Shape::line(a, b).transform(&scale);
-                    draw_polygon(TRANS_BROWN, &line, 0.6, t, g);
+                    draw_polygon([0.0, 0.0, 0.0, 0.3], &line, 0.6, t, g);
                 }
 
                 for obs in features.obstacles.iter() {
@@ -388,7 +442,7 @@ fn draw_gui(window: &mut piston_window::PistonWindow,
                 for (layer_id, paths) in features.paths_by_layer.iter() {
                     for &(ref a, ref b) in paths.iter() {
                         draw_polygon(LAYER_COLORS[*layer_id as usize],
-                                     &geom::Shape::line(&a.point, &b.point).transform(&scale),
+                                     &geom::Shape::line(&a.point(), &b.point()).transform(&scale),
                                      0.7,
                                      t,
                                      g);
@@ -410,7 +464,7 @@ fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
     let mut features: Option<features::Features> = None;
     let mut state = RenderState::default();
 
-    let mut window: PistonWindow = WindowSettings::new("PCB Autorouter", [700; 2])
+    let mut window: PistonWindow = WindowSettings::new("PCB Autorouter", [700 * 2; 2])
         .exit_on_esc(true)
         .build()
         .unwrap();

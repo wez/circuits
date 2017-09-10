@@ -11,17 +11,12 @@ use dijkstra::shortest_path;
 use ordered_float::OrderedFloat;
 use std::rc::Rc;
 use progress::Progress;
-use cdt;
 
 pub type TerminalId = usize;
 const NUM_VIAS: usize = 5;
 // Technically we should use the units and resolution from the pcb for this
 const VIA_MAX_DIST: f64 = 5000.0;
 const ALPHA: f64 = 0.1;
-
-pub type CDTVertex = cdt::Vertex<TerminalId>;
-pub type CDT = cdt::CDT<TerminalId>;
-pub type CDTGraph = cdt::CDTUnGraph<TerminalId>;
 
 // Use the raw pointer to the terminal when keying into hashes.
 fn raw_terminal_ptr(t: &Arc<Terminal>) -> *const Terminal {
@@ -353,8 +348,6 @@ pub struct SharedConfiguration {
     terminal_by_id: HashMap<TerminalId, Arc<Terminal>>,
     terminals: HashMap<*const Terminal, TerminalInfo>,
 
-    pub cdt: CDTGraph,
-
     // Indices are referenced via TwoNetId
     two_nets: Vec<TwoNet>,
     all_layers: LayerSet,
@@ -506,7 +499,7 @@ pub struct Configuration {
     // this configuration instance) node info.
     terminals: HashMap<*const Terminal, TerminalInfo>,
     components: Vec<ComponentList>,
-    shared: Rc<SharedConfiguration>,
+    pub shared: Rc<SharedConfiguration>,
 
     pub assignment: Vec<Assignment>,
     pub overall_cost: f64,
@@ -791,8 +784,8 @@ impl Configuration {
         None
     }
 
-    pub fn extract_paths(&self) -> HashMap<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>> {
-        let mut paths = HashMap::<u8, Vec<(Arc<Terminal>, Arc<Terminal>)>>::new();
+    pub fn extract_paths(&self) -> HashMap<u8, Vec<(OrderedPoint, OrderedPoint)>> {
+        let mut paths = HashMap::<u8, Vec<(OrderedPoint, OrderedPoint)>>::new();
 
         for layer_id in self.shared.all_layers.iter() {
             paths.insert(*layer_id, Vec::new());
@@ -811,7 +804,8 @@ impl Configuration {
                             let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
                             if let Some(paths) = paths.get_mut(&b.layer) {
-                                paths.push((Arc::clone(ta), Arc::clone(tb)));
+                                paths.push((OrderedPoint::from_point(&ta.point),
+                                            OrderedPoint::from_point(&tb.point)));
                             }
                         }
                     }
