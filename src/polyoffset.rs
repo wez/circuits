@@ -90,8 +90,8 @@ fn area(points: &[Point]) -> f64 {
 
     for i in 0..points.len() {
         let j = if i == 0 { points.len() - 1 } else { i - 1 };
-        area += (points[j].coords.x + points[i].coords.x) *
-                (points[j].coords.y - points[i].coords.y);
+        area +=
+            (points[j].coords.x + points[i].coords.x) * (points[j].coords.y - points[i].coords.y);
     }
 
     area * -0.5
@@ -132,42 +132,53 @@ fn dot2d(j: &Point, k: &Point) -> f64 {
     k.coords.x * j.coords.x + j.coords.y * k.coords.y
 }
 
-fn square(delta: f64,
-          j: usize,
-          k: usize,
-          points: &[Point],
-          norms: &[Point],
-          sin_a: f64,
-          output: &mut Vec<Point>) {
+fn square(
+    delta: f64,
+    j: usize,
+    k: usize,
+    points: &[Point],
+    norms: &[Point],
+    sin_a: f64,
+    output: &mut Vec<Point>,
+) {
     let dx = (sin_a.atan2(dot2d(&norms[j], &norms[k])) / 4.0).tan();
     let src = &points[j];
-    output.push(Point::new(src.coords.x + delta * (norms[k].coords.x - norms[k].coords.y * dx),
-                           src.coords.y + delta * (norms[k].coords.y + norms[k].coords.x * dx)));
-    output.push(Point::new(src.coords.x + delta * (norms[j].coords.x - norms[j].coords.y * dx),
-                           src.coords.y + delta * (norms[j].coords.y + norms[j].coords.x * dx)));
+    output.push(Point::new(
+        src.coords.x + delta * (norms[k].coords.x - norms[k].coords.y * dx),
+        src.coords.y + delta * (norms[k].coords.y + norms[k].coords.x * dx),
+    ));
+    output.push(Point::new(
+        src.coords.x + delta * (norms[j].coords.x - norms[j].coords.y * dx),
+        src.coords.y + delta * (norms[j].coords.y + norms[j].coords.x * dx),
+    ));
 }
 
-fn mitre(delta: f64,
-         j: usize,
-         k: usize,
-         r: f64,
-         points: &[Point],
-         norms: &[Point],
-         output: &mut Vec<Point>) {
+fn mitre(
+    delta: f64,
+    j: usize,
+    k: usize,
+    r: f64,
+    points: &[Point],
+    norms: &[Point],
+    output: &mut Vec<Point>,
+) {
     let q = delta / r;
-    output.push(Point::new(points[j].coords.x + (norms[k].x + norms[j].x) * q,
-                           points[j].coords.y * (norms[k].y + norms[j].y) * q));
+    output.push(Point::new(
+        points[j].coords.x + (norms[k].x + norms[j].x) * q,
+        points[j].coords.y * (norms[k].y + norms[j].y) * q,
+    ));
 }
 
-fn round(delta: f64,
-         j: usize,
-         k: usize,
-         points: &[Point],
-         norms: &[Point],
-         sin_a: f64,
-         params: &RoundParams,
-         output: &mut Vec<Point>) {
-
+fn round(
+    delta: f64,
+    j: usize,
+    k: usize,
+    points: &[Point],
+    norms: &[Point],
+    sin_a: f64,
+    params: &RoundParams,
+    output: &mut Vec<Point>,
+) {
     let a = sin_a.atan2(dot2d(&norms[j], &norms[k]));
     let steps = (params.steps_per_rad * a.abs()).round().max(1.0) as usize;
 
@@ -177,15 +188,20 @@ fn round(delta: f64,
     let src = &points[j];
 
     for _ in 0..steps {
-        output.push(Point::new(src.coords.x + x * delta, src.coords.y + y * delta));
+        output.push(Point::new(
+            src.coords.x + x * delta,
+            src.coords.y + y * delta,
+        ));
 
         let x2 = x;
         x = x * params.m_cos - params.m_sin * y;
         y = x2 * params.m_sin + y * params.m_cos;
     }
 
-    output.push(Point::new(src.coords.x + norms[j].x * delta,
-                           src.coords.y + norms[j].y * delta));
+    output.push(Point::new(
+        src.coords.x + norms[j].x * delta,
+        src.coords.y + norms[j].y * delta,
+    ));
 }
 
 /// Performs a buffering operation on the points of a polygon.
@@ -230,11 +246,13 @@ pub fn buffer(input_points: &[Point], delta: f64, join: JoinType) -> Vec<Point> 
             let cos_a = dot2d(&norms[j], &norms[k]);
             if cos_a > 0.0 {
                 // angle -> 0 degrees
-                output.push(Point::new(points[j].coords.x + norms[k].x * delta,
-                                       points[j].coords.y + norms[k].y * delta));
+                output.push(Point::new(
+                    points[j].coords.x + norms[k].x * delta,
+                    points[j].coords.y + norms[k].y * delta,
+                ));
                 continue;
             }
-            // angle -> 180 degrees
+        // angle -> 180 degrees
         } else if sin_a > 1.0 {
             sin_a = 1.0;
         } else if sin_a < -1.0 {
@@ -242,8 +260,10 @@ pub fn buffer(input_points: &[Point], delta: f64, join: JoinType) -> Vec<Point> 
         }
 
         if sin_a * delta < 0.0 {
-            let point = Point::new(points[j].coords.x + norms[k].x * delta,
-                                   points[j].coords.y + norms[k].y * delta);
+            let point = Point::new(
+                points[j].coords.x + norms[k].x * delta,
+                points[j].coords.y + norms[k].y * delta,
+            );
             output.push(point.clone());
             output.push(points[j].clone());
             output.push(point);
@@ -277,10 +297,7 @@ mod tests {
     use super::*;
 
     fn as_raw_points(points: &Vec<Point>) -> Vec<[f64; 2]> {
-        points
-            .iter()
-            .map(|p| [p.coords.x, p.coords.y])
-            .collect()
+        points.iter().map(|p| [p.coords.x, p.coords.y]).collect()
     }
 
     fn from_raw_points(points: &[[f64; 2]]) -> Vec<Point> {

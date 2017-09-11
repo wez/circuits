@@ -1,4 +1,4 @@
-use indicatif::{ProgressBar, ProgressBarIter, ProgressStyle, HumanDuration};
+use indicatif::{HumanDuration, ProgressBar, ProgressBarIter, ProgressStyle};
 use std::time::Instant;
 
 /// Convenience wrapper around a progress bar that includes the total time
@@ -12,10 +12,11 @@ pub struct Progress {
 
 impl Drop for Progress {
     fn drop(&mut self) {
-        self.bar
-            .finish_with_message(&format!("{} done in {}",
-                                          self.msg,
-                                          HumanDuration(self.start.elapsed())));
+        self.bar.finish_with_message(&format!(
+            "{} done in {}",
+            self.msg,
+            HumanDuration(self.start.elapsed())
+        ));
     }
 }
 
@@ -24,9 +25,10 @@ impl Progress {
         let pb = ProgressBar::new(target as u64);
         pb.enable_steady_tick(200);
         pb.set_message(msg);
-        pb.set_style(ProgressStyle::default_bar()
-                     .template("{spinner:.bold} [{elapsed_precise}] {msg:40} \
-                               {bar} {pos}/{len} ({eta})"));
+        pb.set_style(ProgressStyle::default_bar().template(
+            "{spinner:.bold} [{elapsed_precise}] {msg:40} \
+             {bar} {pos}/{len} ({eta})",
+        ));
         Progress {
             start: Instant::now(),
             bar: pb,
@@ -38,8 +40,10 @@ impl Progress {
         let pb = ProgressBar::new_spinner();
         pb.enable_steady_tick(200);
         pb.set_message(msg);
-        pb.set_style(ProgressStyle::default_spinner()
-                     .template("{spinner:.bold} [{elapsed_precise}] {msg} ({pos})"));
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.bold} [{elapsed_precise}] {msg} ({pos})"),
+        );
         Progress {
             start: Instant::now(),
             bar: pb,

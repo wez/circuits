@@ -5,7 +5,6 @@ use features::{LayerSet, Terminal};
 use itertools::Itertools;
 use geom;
 use std::sync::Arc;
-extern crate nalgebra as na;
 use ncollide::query::Proximity::Disjoint;
 
 
@@ -54,11 +53,12 @@ fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
     hanan
 }
 
-fn intersects_obstacle(p: &geom::Point,
-                       via_shape: &geom::Shape,
-                       clearance: f64,
-                       obstacles: &Vec<Arc<Terminal>>)
-                       -> bool {
+fn intersects_obstacle(
+    p: &geom::Point,
+    via_shape: &geom::Shape,
+    clearance: f64,
+    obstacles: &Vec<Arc<Terminal>>,
+) -> bool {
     let via = via_shape.translate_by_point(&p);
     obstacles
         .iter()
@@ -70,13 +70,14 @@ fn intersects_obstacle(p: &geom::Point,
 /// input list of terminals.
 /// The return value is a list of tuples holding the indices
 /// in `terminals` of connected pairs.
-pub fn compute_2nets(net_name: &String,
-                     terminals: &mut Vec<Arc<Terminal>>,
-                     all_layers: &LayerSet,
-                     all_pads: &Vec<Arc<Terminal>>,
-                     clearance: f64,
-                     via_shape: &geom::Shape)
-                     -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
+pub fn compute_2nets(
+    net_name: &String,
+    terminals: &mut Vec<Arc<Terminal>>,
+    all_layers: &LayerSet,
+    all_pads: &Vec<Arc<Terminal>>,
+    clearance: f64,
+    via_shape: &geom::Shape,
+) -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
     let mut terminal_points = Vec::new();
     for t in terminals.iter() {
         terminal_points.push(t.shape.aabb().center());
@@ -88,7 +89,9 @@ pub fn compute_2nets(net_name: &String,
     // Compute hanan grid, but avoid obstacles, including our own pads
     let h_grid: Vec<geom::Point> = hanan_grid(&terminal_points)
         .into_iter()
-        .filter(|p| !intersects_obstacle(p, &via_shape, clearance, &all_pads))
+        .filter(|p| {
+            !intersects_obstacle(p, &via_shape, clearance, &all_pads)
+        })
         .collect();
 
     loop {
@@ -113,11 +116,9 @@ pub fn compute_2nets(net_name: &String,
                     None => {
                         best = Some((cost, candidate_points.clone(), g));
                     }
-                    Some((best_cost, _, _)) => {
-                        if cost < best_cost {
-                            best = Some((cost, candidate_points.clone(), g));
-                        }
-                    }
+                    Some((best_cost, _, _)) => if cost < best_cost {
+                        best = Some((cost, candidate_points.clone(), g));
+                    },
                 }
             }
         }
@@ -159,19 +160,22 @@ pub fn compute_2nets(net_name: &String,
     // of terminals.
     for pt in terminal_points.iter().skip(terminals.len()) {
         terminals.push(Arc::new(Terminal {
-                                    identifier: None,
-                                    net_name: Some(net_name.clone()),
-                                    layers: all_layers.clone(),
-                                    point: *pt,
-                                    shape: via_shape.translate_by_point(&pt),
-                                }));
+            identifier: None,
+            net_name: Some(net_name.clone()),
+            layers: all_layers.clone(),
+            point: *pt,
+            shape: via_shape.translate_by_point(&pt),
+        }));
     }
 
     let mut twonets = Vec::new();
 
     for edge in mst.edge_indices() {
         if let Some((a, b)) = mst.edge_endpoints(edge) {
-            twonets.push((Arc::clone(&terminals[mst[a]]), Arc::clone(&terminals[mst[b]])));
+            twonets.push((
+                Arc::clone(&terminals[mst[a]]),
+                Arc::clone(&terminals[mst[b]]),
+            ));
         }
     }
 

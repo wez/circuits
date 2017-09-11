@@ -2,10 +2,10 @@
 // computed shortest path.  See https://github.com/bluss/petgraph/issues/140
 // which raised the request to do so.
 
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::{BinaryHeap, HashMap};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::hash::Hash;
-use petgraph::visit::{Visitable, IntoEdges, EdgeRef};
+use petgraph::visit::{EdgeRef, IntoEdges, Visitable};
 use petgraph::algo::Measure;
 use std::cmp::Ordering;
 
@@ -53,16 +53,18 @@ impl<K: PartialOrd, T> Ord for MinScored<K, T> {
     }
 }
 
-pub fn shortest_path<G, F, K>(graph: G,
-                              start: G::NodeId,
-                              goal: G::NodeId,
-                              mut edge_cost: F,
-                              cutoff: Option<K>)
-                              -> Option<(K, Vec<G::NodeId>)>
-    where G: IntoEdges + Visitable,
-          G::NodeId: Eq + Hash,
-          F: FnMut(G::EdgeRef) -> K,
-          K: Measure + Copy
+pub fn shortest_path<G, F, K>(
+    graph: G,
+    start: G::NodeId,
+    goal: G::NodeId,
+    mut edge_cost: F,
+    cutoff: Option<K>,
+) -> Option<(K, Vec<G::NodeId>)>
+where
+    G: IntoEdges + Visitable,
+    G::NodeId: Eq + Hash,
+    F: FnMut(G::EdgeRef) -> K,
+    K: Measure + Copy,
 {
     let zero_score = K::default();
     let mut visit_next = BinaryHeap::new();
@@ -109,14 +111,12 @@ pub fn shortest_path<G, F, K>(graph: G,
 
             if !dist.contains_key(&next) {
                 match seen.entry(next) {
-                    Occupied(ent) => {
-                        if total_dist < *ent.get() {
-                            *ent.into_mut() = total_dist;
-                            pred.insert(next, node);
-                            visit_next.push(MinScored(total_dist, next, counter));
-                            counter += 1;
-                        }
-                    }
+                    Occupied(ent) => if total_dist < *ent.get() {
+                        *ent.into_mut() = total_dist;
+                        pred.insert(next, node);
+                        visit_next.push(MinScored(total_dist, next, counter));
+                        counter += 1;
+                    },
                     Vacant(ent) => {
                         *ent.insert(total_dist);
                         pred.insert(next, node);

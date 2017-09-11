@@ -1,11 +1,11 @@
 use petgraph::graphmap::DiGraphMap;
 use features::{LayerSet, Terminal};
-use geom::{Shape, Point, OrderedPoint};
-use std::collections::{HashSet, HashMap};
+use geom::{OrderedPoint, Point, Shape};
+use std::collections::{HashMap, HashSet};
 use ncollide::broad_phase::BroadPhase;
 use ncollide::broad_phase::DBVTBroadPhase;
-extern crate ncollide;
 extern crate nalgebra as na;
+extern crate ncollide;
 use std::sync::Arc;
 use dijkstra::shortest_path;
 use ordered_float::OrderedFloat;
@@ -110,9 +110,11 @@ pub struct ComponentList {
 
 impl ::std::fmt::Debug for ComponentList {
     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::result::Result<(), ::std::fmt::Error> {
-        write!(fmt,
-               "ComponentList with {} components",
-               self.components.len())?;
+        write!(
+            fmt,
+            "ComponentList with {} components",
+            self.components.len()
+        )?;
         Ok(())
     }
 }
@@ -150,29 +152,38 @@ impl ComponentList {
         }
     }
 
-    fn intersects
-        (&self,
-         edge: &PathEdge,
-         clearance: f64)
-         -> Option<Vec<(Arc<Terminal>, Arc<Terminal>, ncollide::query::Contact<Point>)>> {
+    fn intersects(
+        &self,
+        edge: &PathEdge,
+        clearance: f64,
+    ) -> Option<
+        Vec<
+            (
+                Arc<Terminal>,
+                Arc<Terminal>,
+                ncollide::query::Contact<Point>,
+            ),
+        >,
+    > {
         if let Some((ref line, ref bv)) = edge.line {
             let mut candidates = Vec::new();
             self.broad_phase
                 .interferences_with_bounding_volume(bv, &mut candidates);
 
             if candidates.len() > 0 {
-
-                return Some(candidates
-                                .into_iter()
-                                .filter_map(|path_index| {
-                    let path = &self.paths[*path_index];
-                    if let Some(contact) = path.line.contact(line, clearance) {
-                        Some((Arc::clone(&path.a), Arc::clone(&path.b), contact))
-                    } else {
-                        None
-                    }
-                })
-                                .collect());
+                return Some(
+                    candidates
+                        .into_iter()
+                        .filter_map(|path_index| {
+                            let path = &self.paths[*path_index];
+                            if let Some(contact) = path.line.contact(line, clearance) {
+                                Some((Arc::clone(&path.a), Arc::clone(&path.b), contact))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                );
             }
         }
 
@@ -182,10 +193,11 @@ impl ComponentList {
     // Returns the largest of the two components first.
     // If both components are the same, returns (comp, None)
     // If either component is None, returns (comp, None)
-    fn biggest_component(&self,
-                         ta: &Arc<Terminal>,
-                         tb: &Arc<Terminal>)
-                         -> (Option<ComponentIndex>, Option<ComponentIndex>) {
+    fn biggest_component(
+        &self,
+        ta: &Arc<Terminal>,
+        tb: &Arc<Terminal>,
+    ) -> (Option<ComponentIndex>, Option<ComponentIndex>) {
         let a_idx = self.terminal_to_component
             .get(&raw_terminal_ptr(ta))
             .map(|x| *x);
@@ -230,12 +242,11 @@ impl ComponentList {
         let line = Shape::line(&a.point, &b.point);
 
         let phase_id = self.paths.len();
-        self.paths
-            .push(ComponentPath {
-                      line: line.clone(),
-                      a: Arc::clone(a),
-                      b: Arc::clone(b),
-                  });
+        self.paths.push(ComponentPath {
+            line: line.clone(),
+            a: Arc::clone(a),
+            b: Arc::clone(b),
+        });
 
         self.broad_phase
             .deferred_add(phase_id, line.aabb(), phase_id);
@@ -275,7 +286,6 @@ impl ComponentList {
                 .map(|&(_, _, ref shape)| shape.clone())
                 .collect();
             target_comp.hull = Shape::convex_hull(&lines);
-
         } else {
             // Create a new component
             let comp_idx = self.components.len();
@@ -373,20 +383,21 @@ impl SharedConfiguration {
             Vacant(ent) => {
                 let id = self.terminal_by_id.len();
                 ent.insert(TerminalInfo {
-                               configured_layers: LayerSet::default(),
-                               terminal_id: id,
-                           });
+                    configured_layers: LayerSet::default(),
+                    terminal_id: id,
+                });
                 self.terminal_by_id.insert(id, Arc::clone(terminal));
                 id
             }
         }
     }
 
-    pub fn add_twonet(&mut self,
-                      a: &Arc<Terminal>,
-                      b: &Arc<Terminal>,
-                      via_shape: &Shape)
-                      -> (TerminalId, TerminalId) {
+    pub fn add_twonet(
+        &mut self,
+        a: &Arc<Terminal>,
+        b: &Arc<Terminal>,
+        via_shape: &Shape,
+    ) -> (TerminalId, TerminalId) {
         let mut g = AssignGraphMap::new();
 
         let a_id = self.add_terminal(a);
@@ -418,17 +429,19 @@ impl SharedConfiguration {
         let mut via_terminals = Vec::new();
         let mut via_points = Vec::new();
         for i in 0..num_vias {
-            let pt = Point::new(src_point.coords.x + x_delta * i as f64,
-                                src_point.coords.y + y_delta * i as f64);
+            let pt = Point::new(
+                src_point.coords.x + x_delta * i as f64,
+                src_point.coords.y + y_delta * i as f64,
+            );
             via_points.push(pt.clone());
 
             let terminal = Arc::new(Terminal {
-                                        identifier: None,
-                                        net_name: a.net_name.clone(),
-                                        layers: self.all_layers.clone(),
-                                        shape: via_shape.translate_by_point(&pt),
-                                        point: pt.clone(),
-                                    });
+                identifier: None,
+                net_name: a.net_name.clone(),
+                layers: self.all_layers.clone(),
+                shape: via_shape.translate_by_point(&pt),
+                point: pt.clone(),
+            });
             let id = self.add_terminal(&terminal);
 
             via_terminals.push(id);
@@ -442,9 +455,11 @@ impl SharedConfiguration {
         for i in 0..num_vias {
             for layer in 0..self.all_layers.len() - 1 {
                 let via_terminal = via_terminals[i];
-                g.add_edge(Node::via(via_terminal, layer),
-                           Node::via(via_terminal, layer + 1),
-                           PathEdge::zero());
+                g.add_edge(
+                    Node::via(via_terminal, layer),
+                    Node::via(via_terminal, layer + 1),
+                    PathEdge::zero(),
+                );
             }
         }
 
@@ -454,9 +469,11 @@ impl SharedConfiguration {
                 let left_term = via_terminals[i - 1];
                 let right_term = via_terminals[i];
 
-                g.add_edge(Node::via(left_term, layer),
-                           Node::via(right_term, layer),
-                           PathEdge::from_points(&via_points[i - 1], &via_points[i]));
+                g.add_edge(
+                    Node::via(left_term, layer),
+                    Node::via(right_term, layer),
+                    PathEdge::from_points(&via_points[i - 1], &via_points[i]),
+                );
             }
         }
 
@@ -465,30 +482,37 @@ impl SharedConfiguration {
         g.add_node(Node::sink(b_id));
 
         for layer in 0..self.all_layers.len() {
-            g.add_edge(Node::src(a_id),
-                       Node::terminal(a_id, layer),
-                       PathEdge::zero());
+            g.add_edge(
+                Node::src(a_id),
+                Node::terminal(a_id, layer),
+                PathEdge::zero(),
+            );
 
-            g.add_edge(Node::terminal(a_id, layer),
-                       Node::via(via_terminals[0], layer),
-                       PathEdge::from_points(&src_point, &via_points[0]));
+            g.add_edge(
+                Node::terminal(a_id, layer),
+                Node::via(via_terminals[0], layer),
+                PathEdge::from_points(&src_point, &via_points[0]),
+            );
 
-            g.add_edge(Node::via(via_terminals[num_vias - 1], layer),
-                       Node::terminal(b_id, layer),
-                       PathEdge::from_points(&via_points[num_vias - 1], &sink_point));
+            g.add_edge(
+                Node::via(via_terminals[num_vias - 1], layer),
+                Node::terminal(b_id, layer),
+                PathEdge::from_points(&via_points[num_vias - 1], &sink_point),
+            );
 
-            g.add_edge(Node::terminal(b_id, layer),
-                       Node::sink(b_id),
-                       PathEdge::zero());
+            g.add_edge(
+                Node::terminal(b_id, layer),
+                Node::sink(b_id),
+                PathEdge::zero(),
+            );
         }
 
-        self.two_nets
-            .push(TwoNet {
-                      graph: g,
-                      src: a_id,
-                      sink: b_id,
-                      base_cost: na::distance(&src_point, &sink_point),
-                  });
+        self.two_nets.push(TwoNet {
+            graph: g,
+            src: a_id,
+            sink: b_id,
+            base_cost: na::distance(&src_point, &sink_point),
+        });
         (a_id, b_id)
     }
 }
@@ -531,7 +555,6 @@ impl Configuration {
         if !term.layers.contains(&tol.layer) {
             // Not connected to this layer
             return ::std::f64::INFINITY;
-
         }
 
         if info.configured_layers.len() > 0 && !info.configured_layers.contains(&tol.layer) {
@@ -542,22 +565,27 @@ impl Configuration {
         return 0.0;
     }
 
-    fn detour_cost(&self,
-                   a: &Arc<Terminal>,
-                   b: &Arc<Terminal>,
-                   comp_list: &ComponentList,
-                   contacts: &Vec<(Arc<Terminal>,
-                                   Arc<Terminal>,
-                                   ncollide::query::Contact<Point>)>)
-                   -> f64 {
+    fn detour_cost(
+        &self,
+        a: &Arc<Terminal>,
+        b: &Arc<Terminal>,
+        comp_list: &ComponentList,
+        contacts: &Vec<
+            (
+                Arc<Terminal>,
+                Arc<Terminal>,
+                ncollide::query::Contact<Point>,
+            ),
+        >,
+    ) -> f64 {
         let mut cost = 0.0;
         for &(ref terminal_a, ref terminal_b, _) in contacts.iter() {
-
             // If we would legitimately be forming a component, there
             // is no need to detour
             if terminal_a.net_name == a.net_name || terminal_b.net_name == a.net_name ||
-               terminal_a.net_name == b.net_name ||
-               terminal_b.net_name == b.net_name {
+                terminal_a.net_name == b.net_name ||
+                terminal_b.net_name == b.net_name
+            {
                 continue;
             }
             // Skip self intersection
@@ -574,13 +602,15 @@ impl Configuration {
             let comp = &comp_list.components[component_idx];
 
             if let Some(detour) = comp.hull
-                   .detour_path(&a.point, &b.point, self.shared.clearance) {
-                let (detour_cost, _) = shortest_path(&detour,
-                                                     OrderedPoint::from_point(&a.point),
-                                                     OrderedPoint::from_point(&b.point),
-                                                     |(_, _, cost)| *cost,
-                                                     None)
-                        .expect("must be a path");
+                .detour_path(&a.point, &b.point, self.shared.clearance)
+            {
+                let (detour_cost, _) = shortest_path(
+                    &detour,
+                    OrderedPoint::from_point(&a.point),
+                    OrderedPoint::from_point(&b.point),
+                    |(_, _, cost)| *cost,
+                    None,
+                ).expect("must be a path");
                 cost += detour_cost;
             }
         }
@@ -646,11 +676,13 @@ impl Configuration {
     fn path_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
         let ref twonet = self.shared.two_nets[netid];
 
-        shortest_path(&twonet.graph,
-                      Node::src(twonet.src),
-                      Node::sink(twonet.sink),
-                      |(a, b, edge)| self.edge_cost(&a, &b, edge),
-                      cutoff)
+        shortest_path(
+            &twonet.graph,
+            Node::src(twonet.src),
+            Node::sink(twonet.sink),
+            |(a, b, edge)| self.edge_cost(&a, &b, edge),
+            cutoff,
+        )
     }
 
     fn assign_path(&mut self, assignment: Assignment) {
@@ -668,10 +700,10 @@ impl Configuration {
                     if a.layer == b.layer {
                         // We're forming a component; update info.
                         let layer = a.layer as usize;
-                        self.components[layer].add_path(&self.shared.terminal_by_id
-                                                             [&a.terminal_id],
-                                                        &self.shared.terminal_by_id
-                                                             [&b.terminal_id]);
+                        self.components[layer].add_path(
+                            &self.shared.terminal_by_id[&a.terminal_id],
+                            &self.shared.terminal_by_id[&b.terminal_id],
+                        );
                     }
                 }
             }
@@ -681,7 +713,8 @@ impl Configuration {
         self.assignment.push(assignment);
     }
 
-    /// Initial assignment is done by finding the cheapest path and assigning that
+    /// Initial assignment is done by finding the cheapest path and assigning
+    /// that
     /// first, then repeating to find the next cheapest path and so on.
     pub fn initial_assignment(&mut self) {
         let pb = Progress::new("initial assignment", self.shared.two_nets.len());
@@ -701,8 +734,8 @@ impl Configuration {
                 let cutoff = best.as_ref().and_then(|&(_, cost, _, _)| Some(cost));
 
                 if let Some((cost, path)) = self.path_for_net(netid, cutoff) {
-                    if best.is_none() ||
-                       cost < best.as_ref().map(|&(_, cost, _, _)| cost).unwrap() {
+                    if best.is_none() || cost < best.as_ref().map(|&(_, cost, _, _)| cost).unwrap()
+                    {
                         best = Some((netid, cost, path, twonet.base_cost));
                     }
                 }
@@ -713,12 +746,11 @@ impl Configuration {
             free_nets.remove(&netid);
 
             self.assign_path(Assignment {
-                                 netid: netid,
-                                 cost: cost,
-                                 path: path,
-                                 base_cost: base_cost,
-                             });
-
+                netid: netid,
+                cost: cost,
+                path: path,
+                base_cost: base_cost,
+            });
         }
     }
 
@@ -730,16 +762,19 @@ impl Configuration {
         let mut needs_improvement: Vec<(_, _, _)> = self.assignment
             .iter()
             .enumerate()
-            .filter_map(|(idx, ref assignment)| if assignment.cost >
-                                                   (1.0 - ALPHA) * assignment.base_cost {
-                            // Track the difference between the base and the actual cost;
-                            // we will try to improve the largest of these first
-                            Some((OrderedFloat(assignment.cost - assignment.base_cost),
-                                  idx,
-                                  assignment.base_cost))
-                        } else {
-                            None
-                        })
+            .filter_map(|(idx, ref assignment)| {
+                if assignment.cost > (1.0 - ALPHA) * assignment.base_cost {
+                    // Track the difference between the base and the actual cost;
+                    // we will try to improve the largest of these first
+                    Some((
+                        OrderedFloat(assignment.cost - assignment.base_cost),
+                        idx,
+                        assignment.base_cost,
+                    ))
+                } else {
+                    None
+                }
+            })
             .collect();
 
         // Sort by decreasing cost delta
@@ -755,9 +790,10 @@ impl Configuration {
             // worst_idx twice.
             let mut complete = true;
             for idx in [worst_idx]
-                    .iter()
-                    .map(|x| *x)
-                    .chain((0..self.assignment.len()).filter(|x| *x != worst_idx)) {
+                .iter()
+                .map(|x| *x)
+                .chain((0..self.assignment.len()).filter(|x| *x != worst_idx))
+            {
                 let assignment = &self.assignment[idx];
 
                 // let the path finding algo bail out early if this path puts
@@ -766,11 +802,11 @@ impl Configuration {
 
                 if let Some((cost, path)) = cfg.path_for_net(assignment.netid, cutoff) {
                     cfg.assign_path(Assignment {
-                                        netid: assignment.netid,
-                                        cost: cost,
-                                        path: path,
-                                        base_cost: assignment.base_cost,
-                                    });
+                        netid: assignment.netid,
+                        cost: cost,
+                        path: path,
+                        base_cost: assignment.base_cost,
+                    });
                 } else {
                     complete = false;
                     break;
@@ -798,17 +834,17 @@ impl Configuration {
                 let b = assignment.path[i + 1];
 
                 match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
-                    (Some(a), Some(b)) => {
-                        if a.layer == b.layer {
-                            let ta = &self.shared.terminal_by_id[&a.terminal_id];
-                            let tb = &self.shared.terminal_by_id[&b.terminal_id];
+                    (Some(a), Some(b)) => if a.layer == b.layer {
+                        let ta = &self.shared.terminal_by_id[&a.terminal_id];
+                        let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
-                            if let Some(paths) = paths.get_mut(&b.layer) {
-                                paths.push((OrderedPoint::from_point(&ta.point),
-                                            OrderedPoint::from_point(&tb.point)));
-                            }
+                        if let Some(paths) = paths.get_mut(&b.layer) {
+                            paths.push((
+                                OrderedPoint::from_point(&ta.point),
+                                OrderedPoint::from_point(&tb.point),
+                            ));
                         }
-                    }
+                    },
                     _ => {}
                 }
             }

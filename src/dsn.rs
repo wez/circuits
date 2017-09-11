@@ -1,10 +1,12 @@
+// https://github.com/steveklabnik/rustdoc/issues/96
+#![allow(unused_doc_comment)]
+
 use std::fs::File;
 use std::io::prelude::*;
 use std::default::Default;
-extern crate error_chain;
 use std::str;
 extern crate nom;
-use geom::{Point, Shape, Location, Vector, origin};
+use geom::{origin, Location, Point, Shape, Vector};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -17,7 +19,7 @@ pub enum Value {
     TaggedList(String, Vec<Value>),
 }
 
-error_chain! {
+error_chain!{
     foreign_links {
         Io(::std::io::Error);
     }
@@ -81,13 +83,11 @@ impl Value {
 
     pub fn as_tagged_value(&self) -> Result<(&String, Value)> {
         match self {
-            &Value::TaggedList(ref tag, ref list) => {
-                if list.len() != 1 {
-                    Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
-                } else {
-                    Ok((tag, list[0].clone()))
-                }
-            }
+            &Value::TaggedList(ref tag, ref list) => if list.len() != 1 {
+                Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
+            } else {
+                Ok((tag, list[0].clone()))
+            },
             _ => Err(ErrorKind::ExpectedTaggedValue(self.clone()).into()),
         }
     }
@@ -101,13 +101,11 @@ impl Value {
 
     pub fn as_tagged_list_with_name(&self, name: &'static str) -> Result<Vec<Value>> {
         match self {
-            &Value::TaggedList(ref tag, ref list) => {
-                if tag == name {
-                    Ok(list.clone())
-                } else {
-                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
-                }
-            }
+            &Value::TaggedList(ref tag, ref list) => if tag == name {
+                Ok(list.clone())
+            } else {
+                Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
+            },
             _ => Err(ErrorKind::UnexpectedTag(name, self.clone()).into()),
         }
     }
@@ -173,13 +171,15 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
     let res = tagged_list_parser(bytes);
     match res.clone() {
         nom::IResult::Done(_, output) => Ok(output),
-        nom::IResult::Incomplete(needed) => {
-            Err(ErrorKind::Nom(format!("need {:?} more bytes", needed)).into())
-        }
+        nom::IResult::Incomplete(needed) => Err(
+            ErrorKind::Nom(format!("need {:?} more bytes", needed)).into(),
+        ),
         nom::IResult::Error(_) => {
             use nom::{prepare_errors, print_offsets};
             if let Some(v) = prepare_errors(bytes, res) {
-                Err(ErrorKind::Nom(format!("\n{}", print_offsets(bytes, 0, &v))).into())
+                Err(
+                    ErrorKind::Nom(format!("\n{}", print_offsets(bytes, 0, &v))).into(),
+                )
             } else {
                 Err(ErrorKind::Nom(format!("sadness")).into())
             }
@@ -302,9 +302,9 @@ impl DsnShape {
         };
 
         Ok(DsnShape {
-               layer: layer.clone(),
-               shape: Shape::circle(diameter / 2.0, Location::new(Vector::new(x, y), 0.0)),
-           })
+            layer: layer.clone(),
+            shape: Shape::circle(diameter / 2.0, Location::new(Vector::new(x, y), 0.0)),
+        })
     }
 
     fn parse_path(list: &Vec<Value>, drill: bool) -> Result<DsnShape> {
@@ -327,16 +327,16 @@ impl DsnShape {
         if drill && points.len() == 2 {
             if let Some(width) = width {
                 return Ok(DsnShape {
-                              layer: layer.clone(),
-                              shape: Shape::capsule(width, &points[0], &points[1], origin()),
-                          });
+                    layer: layer.clone(),
+                    shape: Shape::capsule(width, &points[0], &points[1], origin()),
+                });
             }
         }
 
         Ok(DsnShape {
-               layer: layer.clone(),
-               shape: Shape::polygon(points, origin(), width),
-           })
+            layer: layer.clone(),
+            shape: Shape::polygon(points, origin(), width),
+        })
     }
 
     fn parse_rect(list: &Vec<Value>) -> Result<DsnShape> {
@@ -346,16 +346,18 @@ impl DsnShape {
         let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
         let (top_right_x, top_right_y) = (list[3].as_f64()?, list[4].as_f64()?);
 
-        let points = vec![Point::new(bottom_left_x, bottom_left_y),
-                          Point::new(bottom_left_x, top_right_y),
-                          Point::new(top_right_x, top_right_y),
-                          Point::new(top_right_x, bottom_left_y),
-                          Point::new(bottom_left_x, bottom_left_y)];
+        let points = vec![
+            Point::new(bottom_left_x, bottom_left_y),
+            Point::new(bottom_left_x, top_right_y),
+            Point::new(top_right_x, top_right_y),
+            Point::new(top_right_x, bottom_left_y),
+            Point::new(bottom_left_x, bottom_left_y),
+        ];
 
         Ok(DsnShape {
-               layer: layer.clone(),
-               shape: Shape::polygon(points, origin(), None),
-           })
+            layer: layer.clone(),
+            shape: Shape::polygon(points, origin(), None),
+        })
     }
 }
 
@@ -570,14 +572,13 @@ impl Pcb {
                 let name = list[0].as_string()?;
                 let x = list[1].as_f64()?;
                 let y = list[2].as_f64()?;
-                //let side = list[3].as_string()?;
+                // let side = list[3].as_string()?;
                 let rotation = list[4].as_f64()?;
-                self.components
-                    .push(Component {
-                              component_type: component_type.clone(),
-                              instance_name: name.clone(),
-                              position: Location::new(Vector::new(x, y), rotation.to_radians()),
-                          })
+                self.components.push(Component {
+                    component_type: component_type.clone(),
+                    instance_name: name.clone(),
+                    position: Location::new(Vector::new(x, y), rotation.to_radians()),
+                })
             }
         }
         Ok(())
@@ -605,7 +606,6 @@ impl Pcb {
                     return Err(ErrorKind::UnexpectedValue(ele.clone()).into());
                 }
             }
-
         }
         self.pad_defs.insert(def.pad_type.clone(), def);
         Ok(())
@@ -635,27 +635,28 @@ impl Pcb {
             }
         }
 
-        self.component_defs
-            .insert(def.component_type.clone(), def);
+        self.component_defs.insert(def.component_type.clone(), def);
         Ok(())
     }
 
     fn parse_pin(&self, list: &Vec<Value>) -> Result<Pin> {
         if list.len() == 4 {
             Ok(Pin {
-                   pad_type: list[0].as_string()?.clone(),
-                   pad_num: list[1].as_i64()?,
-                   position: Location::new(Vector::new(list[2].as_f64()?, list[3].as_f64()?), 0.0),
-               })
+                pad_type: list[0].as_string()?.clone(),
+                pad_num: list[1].as_i64()?,
+                position: Location::new(Vector::new(list[2].as_f64()?, list[3].as_f64()?), 0.0),
+            })
         } else {
             let rot = list[1].as_tagged_list_with_name("rotate")?;
             let degrees = rot[0].as_f64()?;
             Ok(Pin {
-                   pad_type: list[0].as_string()?.clone(),
-                   pad_num: list[2].as_i64()?,
-                   position: Location::new(Vector::new(list[3].as_f64()?, list[4].as_f64()?),
-                                           degrees.to_radians()),
-               })
+                pad_type: list[0].as_string()?.clone(),
+                pad_num: list[2].as_i64()?,
+                position: Location::new(
+                    Vector::new(list[3].as_f64()?, list[4].as_f64()?),
+                    degrees.to_radians(),
+                ),
+            })
         }
     }
 

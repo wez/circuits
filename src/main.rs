@@ -11,12 +11,12 @@ extern crate clap;
 extern crate geo;
 extern crate indicatif;
 extern crate itertools;
+extern crate nalgebra as na;
 extern crate ncollide;
-extern crate petgraph;
 extern crate ordered_float;
+extern crate petgraph;
 extern crate piston_window;
 extern crate spade;
-extern crate nalgebra as na;
 
 mod dijkstra;
 mod dsn;
@@ -46,7 +46,7 @@ use std::sync::Arc;
 
 use features::Terminal;
 use ncollide::query::Proximity::Disjoint;
-use layerpath::{PathConfiguration, CDTGraph};
+use layerpath::{CDTGraph, PathConfiguration};
 use spade::delaunay::Subdivision;
 use geom::OrderedPoint;
 use gui::run_gui;
@@ -73,13 +73,14 @@ use spade::kernels::FloatKernel;
 type CDT = ConstrainedDelaunayTriangulation<OrderedPoint, FloatKernel>;
 
 fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, clearance: f64) {
-
     // Add the polygon that describes the terminal boundaries
 
     let points = shape
-        .buffer_and_simplify(clearance,
-                             JoinType::Round(clearance.abs() / 4.0),
-                             clearance.abs() / 4.0)
+        .buffer_and_simplify(
+            clearance,
+            JoinType::Round(clearance.abs() / 4.0),
+            clearance.abs() / 4.0,
+        )
         .compute_points();
 
     for i in 0..points.len() - 1 {
@@ -97,9 +98,11 @@ fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal_point: &geom::Point,
     // Add the polygon that describes the terminal boundaries
 
     let points = shape
-        .buffer_and_simplify(clearance,
-                             JoinType::Round(clearance.abs() / 4.0),
-                             clearance.abs() / 4.0)
+        .buffer_and_simplify(
+            clearance,
+            JoinType::Round(clearance.abs() / 4.0),
+            clearance.abs() / 4.0,
+        )
         .compute_points();
 
     for pt in points.iter() {
@@ -107,13 +110,16 @@ fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal_point: &geom::Point,
 
         // Make sure that the terminal center is reachable from
         // the pad outline
-        cdt.add_new_constraint_edge(OrderedPoint::from_point(&pt),
-                                    OrderedPoint::from_point(&terminal_point));
+        cdt.add_new_constraint_edge(
+            OrderedPoint::from_point(&pt),
+            OrderedPoint::from_point(&terminal_point),
+        );
     }
 }
 
 fn cdt_to_graph<F>(graph: &mut CDTGraph, cdt: &CDT, mut edge_cost: F)
-    where F: FnMut(&EdgeHandle<OrderedPoint>) -> Option<f64>
+where
+    F: FnMut(&EdgeHandle<OrderedPoint>) -> Option<f64>,
 {
     for edge in cdt.edges() {
         if let Some(cost) = edge_cost(&edge) {
@@ -138,8 +144,10 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let mut cdt_graph = CDTGraph::new();
 
     {
-        let pb = Progress::new("building layer assignment graphs",
-                               features.twonets_by_net.len());
+        let pb = Progress::new(
+            "building layer assignment graphs",
+            features.twonets_by_net.len(),
+        );
 
         for (_, twonets) in pb.wrap_iter(features.twonets_by_net.iter()) {
             for &(ref a, ref b) in twonets {
@@ -159,12 +167,12 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
         for shape in pcb.structure.boundary.iter() {
             pb.inc();
             let term = Arc::new(Terminal {
-                                    identifier: None,
-                                    net_name: None,
-                                    layers: features.all_layers.clone(),
-                                    shape: shape.shape.clone(),
-                                    point: shape.shape.aabb().center(),
-                                });
+                identifier: None,
+                net_name: None,
+                layers: features.all_layers.clone(),
+                shape: shape.shape.clone(),
+                point: shape.shape.aabb().center(),
+            });
             cfg.add_terminal(&term);
             // Negative clearance so that we fit inside the boundary
             cdt_add_obstacle(&mut cdt, &term.shape, -clearance);
@@ -180,9 +188,11 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let mut cfg = layerassign::Configuration::new(&Rc::new(cfg));
 
     cfg.initial_assignment();
-    println!("initial cfg cost is {} for {} paths",
-             cfg.overall_cost,
-             cfg.assignment.len());
+    println!(
+        "initial cfg cost is {} for {} paths",
+        cfg.overall_cost,
+        cfg.assignment.len()
+    );
 
     features.paths_by_layer = cfg.extract_paths();
     notifier.send(ProgressUpdate::Feature(features.clone()));
@@ -246,15 +256,21 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     let paths_by_layer = features.paths_by_layer.clone();
 
     for (layer, twonets) in paths_by_layer.iter() {
-        println!("Starting path assignment for layer {} with {} twonets",
-                 layer,
-                 twonets.len());
+        println!(
+            "Starting path assignment for layer {} with {} twonets",
+            layer,
+            twonets.len()
+        );
 
-        let mut path_config = PathConfiguration::new(clearance / 100.0,
-                                                     Rc::clone(&cdt_graph),
-                                                     &twonets,
-                                                     &features.all_pads);
-        path_config.initial_assignment();
+        let mut path_config = PathConfiguration::new(
+            clearance / 100.0,
+            Rc::clone(&cdt_graph),
+            &twonets,
+            &features.all_pads,
+        );
+        let order = path_config.compute_twonet_order();
+        path_config.compute_path_from_order(&order);
+        // path_config.initial_assignment();
         if let Some(p) = features.paths_by_layer.get_mut(layer) {
             *p = path_config.get_paths().clone();
         }
@@ -274,11 +290,13 @@ fn go() -> Result<(), Box<Error>> {
         .author("Wez Furlong")
         .version("0.0.1")
         .about("Solves pcb track routing")
-        .arg(Arg::with_name("dsn")
-                 .help("path to specctra design file")
-                 .long("dsn")
-                 .takes_value(true)
-                 .required(true))
+        .arg(
+            Arg::with_name("dsn")
+                .help("path to specctra design file")
+                .long("dsn")
+                .takes_value(true)
+                .required(true),
+        )
         .get_matches();
 
     let pcb = Pcb::parse(args.value_of("dsn").unwrap())?;

@@ -1,5 +1,5 @@
 use dsn;
-use geom::{Shape, Point, OrderedPoint};
+use geom::{OrderedPoint, Point, Shape};
 use std::collections::{HashMap, HashSet};
 use twonets;
 use std::sync::Arc;
@@ -46,8 +46,8 @@ impl PartialEq for Terminal {
     // relying on the terminals not having the same point coordinates.
     fn eq(&self, other: &Terminal) -> bool {
         self.identifier == other.identifier && self.net_name == other.net_name &&
-        self.layers == other.layers &&
-        OrderedFloat(self.point.coords.x) == OrderedFloat(self.point.coords.y)
+            self.layers == other.layers &&
+            OrderedFloat(self.point.coords.x) == OrderedFloat(self.point.coords.y)
     }
 }
 
@@ -80,8 +80,10 @@ fn check_layer_contig(layers: &LayerSet) {
     layer_vec.sort();
     for (idx, layer_idx) in layer_vec.iter().enumerate() {
         if idx as u8 != *layer_idx {
-            panic!("layer indices must be contiguous and start at 0.  Have {:?}",
-                   layers);
+            panic!(
+                "layer indices must be contiguous and start at 0.  Have {:?}",
+                layers
+            );
         }
     }
 }
@@ -106,11 +108,11 @@ impl Features {
         check_layer_contig(&all_layers);
 
         let via_shape = &pcb.pad_defs[&pcb.structure.via]
-                             .pads
-                             .values()
-                             .last()
-                             .expect("missing via pad shape")
-                             .shape;
+            .pads
+            .values()
+            .last()
+            .expect("missing via pad shape")
+            .shape;
 
         for (netname, net) in pcb.networks.iter() {
             by_net.insert(netname.clone(), Vec::new());
@@ -127,12 +129,12 @@ impl Features {
         let mut all_pads = Vec::new();
         for shape in pcb.structure.keepout.iter() {
             boundary_obstacles.push(Arc::new(Terminal {
-                                                 identifier: None,
-                                                 net_name: None,
-                                                 layers: all_layers.clone(),
-                                                 shape: shape.shape.clone(),
-                                                 point: shape.shape.aabb().center(),
-                                             }));
+                identifier: None,
+                net_name: None,
+                layers: all_layers.clone(),
+                shape: shape.shape.clone(),
+                point: shape.shape.aabb().center(),
+            }));
         }
 
         // Now build the terminals from the pins in the components
@@ -141,12 +143,12 @@ impl Features {
 
             for out in def.keepout.iter() {
                 let term = Arc::new(Terminal {
-                                        identifier: None,
-                                        net_name: None,
-                                        layers: all_layers.clone(),
-                                        shape: out.shape.translate(&comp.position),
-                                        point: out.shape.aabb().center(),
-                                    });
+                    identifier: None,
+                    net_name: None,
+                    layers: all_layers.clone(),
+                    shape: out.shape.translate(&comp.position),
+                    point: out.shape.aabb().center(),
+                });
                 all_pads.push(Arc::clone(&term));
                 obstacles.push(term);
             }
@@ -197,12 +199,14 @@ impl Features {
 
         let mut twonets_by_net = HashMap::new();
         for (netname, mut terminals) in by_net.iter_mut() {
-            let tnets = twonets::compute_2nets(netname,
-                                               &mut terminals,
-                                               &all_layers,
-                                               &all_pads,
-                                               pcb.structure.rule.clearance,
-                                               &via_shape);
+            let tnets = twonets::compute_2nets(
+                netname,
+                &mut terminals,
+                &all_layers,
+                &all_pads,
+                pcb.structure.rule.clearance,
+                &via_shape,
+            );
             twonets_by_net.insert(netname.clone(), tnets);
         }
 

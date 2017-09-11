@@ -1,12 +1,12 @@
 use piston_window::types::{Color, Matrix2d};
-use piston_window::{line, PistonWindow, Event, Graphics};
+use piston_window::{line, Event, Graphics, PistonWindow};
 use std::time::Duration;
 use std::sync::mpsc;
 
 use dsn::Pcb;
 use ProgressUpdate;
 use features::Features;
-use geom::{Shape, Similarity, Vector, origin, Polyline};
+use geom::{origin, Polyline, Shape, Similarity, Vector};
 use ncollide::bounding_volume::BoundingVolume;
 
 #[allow(dead_code)]
@@ -60,7 +60,8 @@ impl RenderState {
 }
 
 fn draw_polygon<G>(color: Color, shape: &Shape, radius: f64, transform: Matrix2d, g: &mut G)
-    where G: Graphics
+where
+    G: Graphics,
 {
     let poly = shape
         .handle
@@ -72,19 +73,23 @@ fn draw_polygon<G>(color: Color, shape: &Shape, radius: f64, transform: Matrix2d
     for i in 0..points.len() - 1 {
         let a = &points[i];
         let b = &points[i + 1];
-        line(color,
-             radius,
-             [a.coords.x, a.coords.y, b.coords.x, b.coords.y],
-             transform,
-             g);
+        line(
+            color,
+            radius,
+            [a.coords.x, a.coords.y, b.coords.x, b.coords.y],
+            transform,
+            g,
+        );
     }
 }
 
-fn draw_gui(window: &mut PistonWindow,
-            e: &Event,
-            pcb: &Pcb,
-            features: &Option<Features>,
-            state: &mut RenderState) {
+fn draw_gui(
+    window: &mut PistonWindow,
+    e: &Event,
+    pcb: &Pcb,
+    features: &Option<Features>,
+    state: &mut RenderState,
+) {
     use piston_window::*;
 
     let size = window.size();
@@ -132,7 +137,7 @@ fn draw_gui(window: &mut PistonWindow,
                 factor = (size.width as f64 - padding) / p_width;
             }
             let scale = Similarity::new(Vector::new(0.0, 0.0), 0.0, factor) *
-                        Similarity::new(Vector::new(x_offset, y_offset), 0.0, 1.0);
+                Similarity::new(Vector::new(x_offset, y_offset), 0.0, 1.0);
 
             // boundary in light blue
             for shape in pcb.structure.boundary.iter() {
@@ -144,10 +149,7 @@ fn draw_gui(window: &mut PistonWindow,
                 let def = &pcb.component_defs[&comp.component_type];
 
                 for outline in def.outlines.iter() {
-                    let s = outline
-                        .shape
-                        .translate(&comp.position)
-                        .transform(&scale);
+                    let s = outline.shape.translate(&comp.position).transform(&scale);
                     draw_polygon(DARK_GREEN, &s, 0.5, t, g);
                 }
             }
@@ -179,11 +181,13 @@ fn draw_gui(window: &mut PistonWindow,
 
                 for (layer_id, paths) in features.paths_by_layer.iter() {
                     for &(ref a, ref b) in paths.iter() {
-                        draw_polygon(LAYER_COLORS[*layer_id as usize],
-                                     &Shape::line(&a.point(), &b.point()).transform(&scale),
-                                     0.7,
-                                     t,
-                                     g);
+                        draw_polygon(
+                            LAYER_COLORS[*layer_id as usize],
+                            &Shape::line(&a.point(), &b.point()).transform(&scale),
+                            0.7,
+                            t,
+                            g,
+                        );
                     }
                 }
             }
@@ -218,31 +222,29 @@ pub fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
 
     while let Some(e) = window.next() {
         match e {
-            Event::Loop(l) => {
-                match l {
-                    Loop::Render(_) => {
-                        draw_gui(&mut window, &e, &pcb, &features, &mut state);
-                    }
-                    Loop::Idle(args) => {
-                        let mut need_update = false;
-                        let seconds = args.dt.trunc() as u64;
-                        let nanos = args.dt.fract() as u32 * 1_000_000_000;
-                        while let Ok(progress) = rx.recv_timeout(Duration::new(seconds, nanos)) {
-                            need_update = true;
-                            match progress {
-                                ProgressUpdate::Feature(f) => {
-                                    features = Some(f);
-                                }
-                                ProgressUpdate::Done() => {}
-                            }
-                        }
-                        if need_update {
-                            state.reset();
-                        }
-                    }
-                    _ => {}
+            Event::Loop(l) => match l {
+                Loop::Render(_) => {
+                    draw_gui(&mut window, &e, &pcb, &features, &mut state);
                 }
-            }
+                Loop::Idle(args) => {
+                    let mut need_update = false;
+                    let seconds = args.dt.trunc() as u64;
+                    let nanos = args.dt.fract() as u32 * 1_000_000_000;
+                    while let Ok(progress) = rx.recv_timeout(Duration::new(seconds, nanos)) {
+                        need_update = true;
+                        match progress {
+                            ProgressUpdate::Feature(f) => {
+                                features = Some(f);
+                            }
+                            ProgressUpdate::Done() => {}
+                        }
+                    }
+                    if need_update {
+                        state.reset();
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
     }

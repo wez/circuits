@@ -1,12 +1,12 @@
-extern crate ncollide;
 extern crate nalgebra as na;
+extern crate ncollide;
 use ncollide::transformation::ToPolyline;
 use std::sync::Arc;
 use geo;
 use geo::convexhull::ConvexHull;
 use geo::simplify::Simplify;
 use polyoffset::{buffer, JoinType};
-use std::fmt::{Debug, Formatter, Error};
+use std::fmt::{Debug, Error, Formatter};
 use std::result::Result;
 use ncollide::query::{contact, proximity, Contact, Proximity};
 use ncollide::query::Proximity::Intersecting;
@@ -101,10 +101,12 @@ impl Shape {
         indices.push(na::Point2::new(points.len() - 1, 0));
 
         Shape {
-            handle: ShapeHandle::new(Polyline::new(Arc::new(points),
-                                                   Arc::new(indices),
-                                                   None,
-                                                   None)),
+            handle: ShapeHandle::new(Polyline::new(
+                Arc::new(points),
+                Arc::new(indices),
+                None,
+                None,
+            )),
             location: location,
             width: width,
         }
@@ -145,10 +147,11 @@ impl Shape {
         let pt = points[0].clone();
         points.push(pt);
 
-        Shape::polygon(points,
-                       location *
-                       Location::new(Vector::new(a.coords.x, a.coords.y + half_height), angle),
-                       None)
+        Shape::polygon(
+            points,
+            location * Location::new(Vector::new(a.coords.x, a.coords.y + half_height), angle),
+            None,
+        )
     }
 
     // returns the axis-aligned bounding-box
@@ -163,32 +166,33 @@ impl Shape {
 
     pub fn translate(&self, location: &Location) -> Shape {
         return Shape {
-                   handle: self.handle.clone(),
-                   location: location * self.location,
-                   width: self.width,
-               };
+            handle: self.handle.clone(),
+            location: location * self.location,
+            width: self.width,
+        };
     }
 
     pub fn translate_by_point(&self, pt: &Point) -> Shape {
-        self.translate(&Location::new(Vector::new(pt.coords.x, pt.coords.y), na::zero()))
+        self.translate(&Location::new(
+            Vector::new(pt.coords.x, pt.coords.y),
+            na::zero(),
+        ))
     }
 
     pub fn transform(&self, xlate: &Similarity) -> Shape {
-        Shape::polygon(self.compute_points()
-                           .iter()
-                           .map(|pt| xlate * pt)
-                           .collect(),
-                       origin(),
-                       if let Some(w) = self.width {
-                           Some(w * xlate.scaling())
-                       } else {
-                           None
-                       })
+        Shape::polygon(
+            self.compute_points().iter().map(|pt| xlate * pt).collect(),
+            origin(),
+            if let Some(w) = self.width {
+                Some(w * xlate.scaling())
+            } else {
+                None
+            },
+        )
     }
 
     pub fn is_verticalish_line(&self) -> bool {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
-
             let vertices = &poly.vertices();
             let a = &vertices[0];
             let b = &vertices[1];
@@ -226,9 +230,11 @@ impl Shape {
     }
 
     pub fn buffer(&self, delta: f64, join_type: JoinType) -> Shape {
-        Shape::polygon(buffer(&self.compute_points(), delta, join_type),
-                       origin(),
-                       None)
+        Shape::polygon(
+            buffer(&self.compute_points(), delta, join_type),
+            origin(),
+            None,
+        )
     }
 
     pub fn buffer_and_simplify(&self, delta: f64, join_type: JoinType, epsilon: f64) -> Shape {
@@ -237,13 +243,15 @@ impl Shape {
             .map(geo_point)
             .collect();
         let simpler = ls.simplify(&epsilon);
-        Shape::polygon(simpler
-                           .0
-                           .into_iter()
-                           .map(|p| Point::new(p.x(), p.y()))
-                           .collect(),
-                       origin(),
-                       None)
+        Shape::polygon(
+            simpler
+                .0
+                .into_iter()
+                .map(|p| Point::new(p.x(), p.y()))
+                .collect(),
+            origin(),
+            None,
+        )
     }
 
 
@@ -254,10 +262,9 @@ impl Shape {
         let polys: geo::MultiPolygon<_> = shapes
             .iter()
             .map(|shape| {
-                     let ls: geo::LineString<_> =
-                         shape.compute_points().iter().map(geo_point).collect();
-                     geo::Polygon::new(ls, Vec::new())
-                 })
+                let ls: geo::LineString<_> = shape.compute_points().iter().map(geo_point).collect();
+                geo::Polygon::new(ls, Vec::new())
+            })
             .collect();
         let hull = polys.convex_hull();
         let points = hull.exterior
@@ -268,11 +275,13 @@ impl Shape {
     }
 
     pub fn contact(&self, other: &Shape, clearance: f64) -> Option<Contact<Point>> {
-        contact(&self.location,
-                &*self.handle,
-                &other.location,
-                &*other.handle,
-                clearance)
+        contact(
+            &self.location,
+            &*self.handle,
+            &other.location,
+            &*other.handle,
+            clearance,
+        )
     }
 
     /// Computes the exterior points of the shape, then computes each
@@ -290,11 +299,13 @@ impl Shape {
 
             let line = Shape::line(prior_pt, pt);
 
-            if let Some(contact) = contact(&line.location,
-                                           &*line.handle,
-                                           &other.location,
-                                           &*other.handle,
-                                           clearance) {
+            if let Some(contact) = contact(
+                &line.location,
+                &*line.handle,
+                &other.location,
+                &*other.handle,
+                clearance,
+            ) {
                 contacts.push(contact.world1);
             }
         }
@@ -303,19 +314,23 @@ impl Shape {
     }
 
     pub fn intersects(&self, other: &Shape) -> bool {
-        proximity(&self.location,
-                  &*self.handle,
-                  &other.location,
-                  &*other.handle,
-                  0.0) == Intersecting
+        proximity(
+            &self.location,
+            &*self.handle,
+            &other.location,
+            &*other.handle,
+            0.0,
+        ) == Intersecting
     }
 
     pub fn proximity(&self, other: &Shape, margin: f64) -> Proximity {
-        proximity(&self.location,
-                  &*self.handle,
-                  &other.location,
-                  &*other.handle,
-                  margin)
+        proximity(
+            &self.location,
+            &*self.handle,
+            &other.location,
+            &*other.handle,
+            margin,
+        )
     }
 
     /// Given pair of points A and B, determine the detour graph.
@@ -323,11 +338,12 @@ impl Shape {
     /// from a->b and from b->a.  We then connect these to the closest
     /// points on the polygon perimeter and return a graph with edges
     /// set to the distance between the points.
-    pub fn detour_path(&self,
-                       a: &Point,
-                       b: &Point,
-                       clearance: f64)
-                       -> Option<UnGraphMap<OrderedPoint, f64>> {
+    pub fn detour_path(
+        &self,
+        a: &Point,
+        b: &Point,
+        clearance: f64,
+    ) -> Option<UnGraphMap<OrderedPoint, f64>> {
         let line = Shape::line(a, b);
 
         let (contacts, points) = self.all_contacts(&line, clearance);
@@ -343,9 +359,11 @@ impl Shape {
             let prior = if i == 0 { points.len() - 1 } else { i - 1 };
 
             let prior_pt = &points[prior];
-            graph.add_edge(OrderedPoint::from_point(prior_pt),
-                           OrderedPoint::from_point(pt),
-                           na::distance(prior_pt, pt));
+            graph.add_edge(
+                OrderedPoint::from_point(prior_pt),
+                OrderedPoint::from_point(pt),
+                na::distance(prior_pt, pt),
+            );
         }
 
         // Find the closest point of contact to a, b respectively
@@ -353,37 +371,44 @@ impl Shape {
             .iter()
             .min_by(|ca, cb| order_by_dist(&ca, &cb, &a))
             .unwrap();
-        graph.add_edge(OrderedPoint::from_point(a),
-                       OrderedPoint::from_point(&contact_a),
-                       na::distance(a, contact_a));
+        graph.add_edge(
+            OrderedPoint::from_point(a),
+            OrderedPoint::from_point(&contact_a),
+            na::distance(a, contact_a),
+        );
 
         let contact_b = contacts
             .iter()
             .min_by(|ca, cb| order_by_dist(&ca, &cb, &b))
             .unwrap();
-        graph.add_edge(OrderedPoint::from_point(&contact_b),
-                       OrderedPoint::from_point(b),
-                       na::distance(contact_b, b));
+        graph.add_edge(
+            OrderedPoint::from_point(&contact_b),
+            OrderedPoint::from_point(b),
+            na::distance(contact_b, b),
+        );
 
         // Find the closest vertex to contact_a, contact_b respectively.
         let close_a = points
             .iter()
             .min_by(|a, b| order_by_dist(&a, &b, &contact_a))
             .unwrap();
-        graph.add_edge(OrderedPoint::from_point(&contact_a),
-                       OrderedPoint::from_point(close_a),
-                       na::distance(contact_a, &close_a));
+        graph.add_edge(
+            OrderedPoint::from_point(&contact_a),
+            OrderedPoint::from_point(close_a),
+            na::distance(contact_a, &close_a),
+        );
 
         let close_b = points
             .iter()
             .min_by(|a, b| order_by_dist(&a, &b, &contact_b))
             .unwrap();
-        graph.add_edge(OrderedPoint::from_point(&contact_b),
-                       OrderedPoint::from_point(close_b),
-                       na::distance(contact_b, &close_b));
+        graph.add_edge(
+            OrderedPoint::from_point(&contact_b),
+            OrderedPoint::from_point(close_b),
+            na::distance(contact_b, &close_b),
+        );
 
         Some(graph)
-
     }
 }
 
@@ -396,15 +421,19 @@ impl Clone for Shape {
 impl Debug for Shape {
     fn fmt(&self, fmt: &mut Formatter) -> Result<(), Error> {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
-            write!(fmt,
-                   "Polyline with {} vertices at {}",
-                   poly.vertices().len(),
-                   self.location)?;
+            write!(
+                fmt,
+                "Polyline with {} vertices at {}",
+                poly.vertices().len(),
+                self.location
+            )?;
         } else if let Some(circle) = self.handle.as_shape::<Circle>() {
-            write!(fmt,
-                   "Circle radius {} at {}",
-                   circle.radius(),
-                   self.location)?;
+            write!(
+                fmt,
+                "Circle radius {} at {}",
+                circle.radius(),
+                self.location
+            )?;
         } else {
             write!(fmt, "Unhandled shape type at {}", self.location)?;
         }

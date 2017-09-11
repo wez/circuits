@@ -1,5 +1,5 @@
 // Find a path for a set of terminals on a single layer
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use features::Terminal;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use progress::Progress;
 use petgraph::graphmap::UnGraphMap;
 use std::f64::INFINITY;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
+extern crate nalgebra as na;
 
 type Path = (OrderedPoint, OrderedPoint);
 type PadBroadPhase = DBVTBroadPhase<Point, AABB<Point>, usize>;
@@ -32,61 +33,6 @@ pub struct TerminalInfo {
     pub incident: Vec<OrderedPoint>,
 }
 
-/// Given an ordering of twonet paths, re-order the paths such that
-/// the result is planar.  This works by considering whether each
-/// twonet is "open" or "closed".  A "closed" twonet is one that closes
-/// a path between two terminals when considering the twonets preceeding
-/// it.  Otherwise (eg: it is blocked by those before it) it is "open".
-/// The open nets are brought to the front of the ordering while
-/// maintaining the relative ordering of the open and closed sets respectively.
-fn planarity_enforcement_operator(twonets: &Vec<Path>) -> Vec<Path> {
-    type Broad = DBVTBroadPhase<Point, AABB<Point>, usize>;
-    let mut broad = Broad::new(0.0, false);
-    let mut lines = Vec::new();
-
-    let mut open = Vec::new();
-    let mut closed = Vec::new();
-
-    for path in twonets.iter() {
-        let line = Shape::line(&path.0.point(), &path.1.point());
-        let idx = lines.len();
-        let bv = line.aabb();
-        let mut is_open = false;
-
-        {
-            let mut candidates = Vec::new();
-            broad.interferences_with_bounding_volume(&bv, &mut candidates);
-
-            for lineidx in candidates.iter().map(|x| **x) {
-                let other_path = &twonets[lineidx];
-                if other_path.0 == path.0 || other_path.0 == path.1 ||
-                    other_path.1 == path.0 || other_path.1 == path.1 {
-                    // We're expanding this twonet into a larger component
-                    continue;
-                }
-                if let Some(_) = line.contact(&lines[lineidx], 0.0) {
-                    // Blocked by a preceeding item
-                    is_open = true;
-                    break;
-                }
-            }
-        }
-
-        broad.deferred_add(idx, bv, idx);
-        lines.push(line);
-        broad.update(&mut |a, b| a != b, &mut |_, _, _| {});
-
-        if is_open {
-            open.push(*path);
-        } else {
-            closed.push(*path);
-        }
-    }
-
-    open.append(&mut closed);
-    open
-}
-
 struct Assignment {
     assignment: HashMap<OrderedPoint, TerminalInfo>,
     broad_phase: TerminalBroadPhase,
@@ -105,22 +51,162 @@ impl Assignment {
     }
 }
 
+#[derive(Clone)]
+struct Component {
+    twonets: Vec<Path>,
+}
+
+struct ComponentWithHull {
+    twonets: Vec<Path>,
+    lines: Vec<Shape>,
+    bvs: Vec<AABB<Point>>,
+    hull: Shape,
+    broad: TerminalBroadPhase,
+}
+
+#[derive(Default)]
+struct ComponentGrouper {
+    components: Vec<Component>,
+    point_to_comp: HashMap<OrderedPoint, usize>,
+}
+
+impl ComponentWithHull {
+    fn new(comp: &Component) -> ComponentWithHull {
+        let lines = comp.twonets
+            .iter()
+            .map(|&(a, b)| Shape::line(&a.point(), &b.point()))
+            .collect();
+        let hull = Shape::convex_hull(&lines);
+
+        let mut broad = TerminalBroadPhase::new(0.0, false);
+        let mut bvs = Vec::new();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let bv = line.aabb();
+            broad.deferred_add(idx, bv.clone(), idx);
+            bvs.push(bv);
+        }
+        broad.update(&mut |a, b| a != b, &mut |_, _, _| {});
+
+        ComponentWithHull {
+            twonets: comp.twonets.clone(),
+            lines: lines,
+            hull: hull,
+            bvs: bvs,
+            broad: broad,
+        }
+    }
+}
+
+impl ComponentGrouper {
+    fn biggest_component(&self, path: &Path) -> (Option<usize>, Option<usize>) {
+        let a_idx = self.point_to_comp.get(&path.0).map(|x| *x);
+        let b_idx = self.point_to_comp.get(&path.1).map(|x| *x);
+
+        if a_idx.is_none() {
+            return (b_idx, None);
+        }
+
+        if b_idx.is_none() {
+            return (a_idx, None);
+        }
+
+        let a_idx = a_idx.expect("checked above");
+        let b_idx = b_idx.expect("checked above");
+
+        if a_idx == b_idx {
+            return (Some(a_idx), None);
+        }
+
+        let ref a = self.components[a_idx];
+        let ref b = self.components[b_idx];
+
+        let a_len = a.twonets.len();
+        let b_len = b.twonets.len();
+
+        if a_len > b_len {
+            return (Some(a_idx), Some(b_idx));
+        }
+
+        if a_len < b_len {
+            return (Some(b_idx), Some(a_idx));
+        }
+
+        (Some(a_idx), Some(b_idx))
+    }
+
+    fn add_path(&mut self, path: &Path) {
+        let (target_idx, src_idx) = self.biggest_component(path);
+
+        if let Some(target_idx) = target_idx {
+            if let Some(src_idx) = src_idx {
+                // Update mapping
+                for path in self.components[src_idx].twonets.iter() {
+                    self.point_to_comp.insert(path.0, target_idx);
+                    self.point_to_comp.insert(path.1, target_idx);
+                }
+
+                // Merge src -> target
+                if src_idx < target_idx {
+                    let (s1, s2) = self.components.split_at_mut(target_idx);
+                    s2[0].twonets.append(&mut s1[src_idx].twonets);
+                } else {
+                    let (s1, s2) = self.components.split_at_mut(src_idx);
+                    s1[target_idx].twonets.append(&mut s2[0].twonets);
+                }
+            }
+
+            // Add to target component
+            self.point_to_comp.insert(path.0, target_idx);
+            self.point_to_comp.insert(path.1, target_idx);
+
+            let ref mut target_comp = self.components[target_idx];
+            target_comp.twonets.push(*path);
+        } else {
+            // Create a new component
+
+            let idx = self.components.len();
+            let comp = Component {
+                twonets: vec![*path],
+            };
+            self.components.push(comp);
+            self.point_to_comp.insert(path.0, idx);
+            self.point_to_comp.insert(path.1, idx);
+        }
+    }
+
+    fn add_paths(&mut self, paths: &Vec<Path>) {
+        for path in paths.iter() {
+            self.add_path(path);
+        }
+    }
+
+    // Remove any empty (merged) components
+    fn minimize(&self) -> Vec<ComponentWithHull> {
+        self.components
+            .iter()
+            .filter(|comp| comp.twonets.len() > 0)
+            .map(|comp| ComponentWithHull::new(comp))
+            .collect()
+    }
+}
+
 pub struct PathConfiguration {
     cdt: Rc<CDTGraph>,
-    twonets: Vec<Path>,
     assignment: Assignment,
     broad_all_pads: PadBroadPhase,
     all_pads: Vec<Arc<Terminal>>,
     clearance: f64,
+    components: Vec<ComponentWithHull>,
 }
 
 impl PathConfiguration {
-    pub fn new(clearance: f64,
-               cdt: Rc<CDTGraph>,
-               paths: &Vec<Path>,
-               all_pads: &Vec<Arc<Terminal>>)
-               -> PathConfiguration {
-
+    pub fn new(
+        clearance: f64,
+        cdt: Rc<CDTGraph>,
+        paths: &Vec<Path>,
+        all_pads: &Vec<Arc<Terminal>>,
+    ) -> PathConfiguration {
         let mut pads = PadBroadPhase::new(clearance, false);
 
         for (idx, term) in all_pads.iter().enumerate() {
@@ -128,13 +214,16 @@ impl PathConfiguration {
         }
         pads.update(&mut |a, b| a != b, &mut |_, _, _| {});
 
+        let mut components = ComponentGrouper::default();
+        components.add_paths(&paths);
+
         PathConfiguration {
             cdt: cdt,
-            twonets: paths.clone(),
             assignment: Assignment::new(clearance),
             all_pads: all_pads.clone(),
             broad_all_pads: pads,
             clearance: clearance,
+            components: components.minimize(),
         }
     }
 
@@ -183,26 +272,27 @@ impl PathConfiguration {
         base_cost
     }
 
-    fn compute_path(&self,
-                    twonet_path: &Path,
-                    cutoff: Option<f64>)
-                    -> Option<(f64, Vec<OrderedPoint>)> {
-        shortest_path(&*self.cdt,
-                      twonet_path.0,
-                      twonet_path.1,
-                      |(a, b, edge)| self.edge_cost(&a, &b, edge),
-                      cutoff)
+    fn compute_path(
+        &self,
+        twonet_path: &Path,
+        cutoff: Option<f64>,
+    ) -> Option<(f64, Vec<OrderedPoint>)> {
+        shortest_path(
+            &*self.cdt,
+            twonet_path.0,
+            twonet_path.1,
+            |(a, b, edge)| self.edge_cost(&a, &b, edge),
+            cutoff,
+        )
     }
 
     fn a_to_b(&mut self, a: OrderedPoint, b: OrderedPoint, is_incident: bool) {
         match self.assignment.assignment.entry(a) {
-            Occupied(mut ent) => {
-                if is_incident {
-                    ent.get_mut().incident.push(b);
-                } else {
-                    ent.get_mut().attached.push(b);
-                }
-            }
+            Occupied(mut ent) => if is_incident {
+                ent.get_mut().incident.push(b);
+            } else {
+                ent.get_mut().attached.push(b);
+            },
             Vacant(ent) => {
                 let mut info = TerminalInfo {
                     attached: Vec::new(),
@@ -226,9 +316,11 @@ impl PathConfiguration {
             let line = Shape::line(&a.point(), &b.point());
 
             let edge_idx = self.assignment.paths.len();
-            self.assignment
-                .broad_phase
-                .deferred_add(self.assignment.paths.len(), line.aabb(), edge_idx);
+            self.assignment.broad_phase.deferred_add(
+                self.assignment.paths.len(),
+                line.aabb(),
+                edge_idx,
+            );
             self.assignment.paths.push(path);
             self.assignment.path_lines.push(line);
             self.a_to_b(a, b, i == 0);
@@ -239,32 +331,131 @@ impl PathConfiguration {
             .update(&mut |a, b| a != b, &mut |_, _, _| {});
     }
 
-    pub fn initial_assignment(&mut self) {
-        let pb = Progress::new("initial path", self.twonets.len());
-        let mut free_nets: HashSet<Path> = self.twonets.iter().map(|x| *x).collect();
+    /// This method computes the order in which we will route the paths in
+    /// the final topology.  The ordering is important to ensure that the
+    /// result is planar (eg: no paths will cross) and to minimize the
+    /// length of the wiring.
+    /// The twonet ordering problem is comprised of the following steps:
+    /// 1. Grouping the twonets into components (handled in our constructor)
+    /// 2. Building an n-by-n matrix (where n = number of components)
+    /// 3. The values in the matrix are the detour cost of the pair
+    /// 4. A given component when paired with itself has a 0 detour cost
+    /// 5. Minimize the lower triangle.
+    /// Note that thesis describes a concept of closed and open twonets;
+    /// those are used when binning the problem into smaller portions.
+    /// Since we are not binning we don't need to perform the extra
+    /// planar enforcement operator step.
+    pub fn compute_twonet_order(&mut self) -> Vec<Path> {
+        let num_comps = self.components.len();
+        let pb = Progress::new("component ordering", num_comps);
 
-        loop {
-            if free_nets.len() == 0 {
-                break;
+        let mut input_matrix: Vec<Vec<f64>> = Vec::with_capacity(num_comps);
+
+        for i in 0..num_comps {
+            let mut row = Vec::with_capacity(num_comps);
+            for j in 0..num_comps {
+                if i == j {
+                    row.push(0.0);
+                } else {
+                    row.push(self.compute_detour_cost(i, j));
+                }
             }
+            input_matrix.push(row);
+        }
 
+        let mut output_matrix = input_matrix.clone();
+
+        let mut component_order: Vec<usize> = Vec::with_capacity(num_comps);
+        let mut selected = HashSet::new();
+
+        for _ in (0..num_comps).rev() {
             pb.inc();
+            let mut best_cost = INFINITY;
+            let mut best_comp = 0;
 
-            let mut best = None;
-            for path_ref in free_nets.iter() {
-                let twonet_path = *path_ref;
-                let cutoff = best.as_ref().and_then(|&(_, cost, _)| Some(cost));
+            for j in 0..num_comps {
+                if selected.contains(&j) {
+                    continue;
+                }
 
-                if let Some((cost, path)) = self.compute_path(&twonet_path, cutoff) {
-                    if best.is_none() || cost < best.as_ref().map(|&(_, cost, _)| cost).unwrap() {
-                        best = Some((twonet_path, cost, path));
-                    }
+                let cost = output_matrix[j].iter().sum();
+                if cost < best_cost {
+                    best_comp = j;
+                    best_cost = cost;
                 }
             }
 
-            let (twonet_path, _, path) = best.expect("must always be able to find the best");
-            free_nets.remove(&twonet_path);
-            self.add_assignment(path);
+            selected.insert(best_comp);
+            component_order.push(best_comp);
+            for i in 0..num_comps {
+                output_matrix[best_comp][i] = 0.0;
+                output_matrix[i][best_comp] = 0.0;
+            }
+        }
+
+        // component_order now holds the components in the reverse
+        // order they should be routed, so walk over it backwards
+        // to yield the final ordering.
+        component_order
+            .iter()
+            .rev()
+            .flat_map(|i| self.components[*i].twonets.iter())
+            .map(|x| *x)
+            .collect()
+    }
+
+    fn compute_detour_cost(&self, component_i: usize, component_j: usize) -> f64 {
+        let mut detour_cost = 0.0;
+        let mut base_cost = 0.0;
+
+        let component_i = &self.components[component_i];
+        let component_j = &self.components[component_j];
+
+        // The first component is easy: there are no conflicts so we just
+        // accumulate the base cost
+        for idx in 0..component_i.twonets.len() {
+            let path = component_i.twonets[idx];
+            base_cost += na::distance(&path.0.point(), &path.1.point());
+        }
+
+        // The second component may conflict with the first
+        for idx in 0..component_j.twonets.len() {
+            let path = component_j.twonets[idx];
+            let line = &component_j.lines[idx];
+            let bv = &component_j.bvs[idx];
+
+            base_cost += na::distance(&path.0.point(), &path.1.point());
+
+            // Does this line collide with anything previously routed?
+            let mut candidates = Vec::new();
+            component_i
+                .broad
+                .interferences_with_bounding_volume(&bv, &mut candidates);
+
+            let a = path.0.point();
+            let b = path.1.point();
+            for i_idx in candidates.iter().map(|x| *x) {
+                if let Some(_) = line.contact(&component_i.lines[*i_idx], 0.0) {
+                    // We have a collision so we need to detour around the hull
+
+                    if let Some(detour) = component_i.hull.detour_path(&a, &b, 0.0) {
+                        let (cost, _) =
+                            shortest_path(&detour, path.0, path.1, |(_, _, cost)| *cost, None)
+                                .expect("must be a path");
+                        detour_cost += cost;
+                    }
+                }
+            }
+        }
+
+        detour_cost + base_cost
+    }
+
+    pub fn compute_path_from_order(&mut self, twonets: &Vec<Path>) {
+        for twonet_path in twonets.iter() {
+            if let Some((_, path)) = self.compute_path(&twonet_path, None) {
+                self.add_assignment(path);
+            }
         }
     }
 
