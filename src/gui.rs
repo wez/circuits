@@ -206,7 +206,7 @@ pub fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
     let mut features: Option<Features> = None;
     let mut state = RenderState::default();
 
-    let mut window: PistonWindow = WindowSettings::new("PCB Autorouter", [700 * 2; 2])
+    let mut window: PistonWindow = WindowSettings::new("PCB Autorouter", [700; 2])
         .exit_on_esc(true)
         .build()
         .unwrap();

@@ -45,7 +45,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use features::Terminal;
-use ncollide::query::Proximity::Disjoint;
 use layerpath::{CDTGraph, PathConfiguration};
 use spade::delaunay::Subdivision;
 use geom::OrderedPoint;
@@ -197,16 +196,23 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     features.paths_by_layer = cfg.extract_paths();
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
+    let mut improvement_pass = 1;
     loop {
-        if let Some(improved) = cfg.improve_one() {
+        if let Some(improved) = cfg.improve_one(improvement_pass) {
             cfg = improved;
-            println!("improved cfg cost is {}", cfg.overall_cost);
             features.paths_by_layer = cfg.extract_paths();
             notifier.send(ProgressUpdate::Feature(features.clone()));
+            improvement_pass += 1;
         } else {
             break;
         }
     }
+    println!(
+        "improved cfg cost is {} for {} paths in {} passes",
+        cfg.overall_cost,
+        cfg.assignment.len(),
+        improvement_pass
+    );
 
     {
         let pb = Progress::spinner("triangulating stage 2");
@@ -223,21 +229,8 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
             let edge_cost = |edge: &EdgeHandle<OrderedPoint>| {
                 let from = &*edge.from();
                 let to = &*edge.to();
-
                 let a = from.point();
                 let b = to.point();
-                let line = geom::Shape::line(&a, &b);
-
-                // Elide lines that cross the obstacles.  The CDT seems to
-                // falsely include these.  Whether I'm misunderstanding how
-                // to use it or not, it's worth processing the graph to ensure
-                // that they are not included in the result.
-                for obs in features.obstacles.iter() {
-                    if line.proximity(&obs.shape, clearance / 2.0) != Disjoint {
-                        // return None;
-                    }
-                }
-
                 Some(na::distance(&a, &b))
             };
 

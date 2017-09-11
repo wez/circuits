@@ -754,7 +754,7 @@ impl Configuration {
         }
     }
 
-    pub fn improve_one(&self) -> Option<Configuration> {
+    pub fn improve_one(&self, pass_number: u32) -> Option<Configuration> {
         // Do we have any paths that we think could be improved?
         // Comparing the base cost of the path with the final cost helps us
         // decide if there is potential for an improvement.
@@ -779,7 +779,11 @@ impl Configuration {
 
         // Sort by decreasing cost delta
         needs_improvement.sort_by(|&(a, _, _), &(b, _, _)| b.cmp(&a));
-        let pb = Progress::new("improving", needs_improvement.len());
+        let mut pb = Progress::new(
+            &format!("improving (pass {})", pass_number),
+            needs_improvement.len(),
+        );
+        pb.disable_finish_message();
 
         for &(_, worst_idx, _) in pb.wrap_iter(needs_improvement.iter()) {
             // make a new Configuration that we can build up in a different order
@@ -828,8 +832,7 @@ impl Configuration {
         }
 
         for ref assignment in self.assignment.iter() {
-            // Skip source and sink nodes
-            for i in 1..assignment.path.len() - 2 {
+            for i in 0..assignment.path.len() - 1 {
                 let a = assignment.path[i];
                 let b = assignment.path[i + 1];
 
@@ -839,10 +842,12 @@ impl Configuration {
                         let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
                         if let Some(paths) = paths.get_mut(&b.layer) {
-                            paths.push((
-                                OrderedPoint::from_point(&ta.point),
-                                OrderedPoint::from_point(&tb.point),
-                            ));
+                            if ta.point != tb.point {
+                                paths.push((
+                                    OrderedPoint::from_point(&ta.point),
+                                    OrderedPoint::from_point(&tb.point),
+                                ));
+                            }
                         }
                     },
                     _ => {}
