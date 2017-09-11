@@ -423,26 +423,51 @@ impl PathConfiguration {
             let path = component_j.twonets[idx];
             let line = &component_j.lines[idx];
             let bv = &component_j.bvs[idx];
+            let a = path.0.point();
+            let b = path.1.point();
 
             base_cost += na::distance(&path.0.point(), &path.1.point());
 
-            // Does this line collide with anything previously routed?
-            let mut candidates = Vec::new();
-            component_i
-                .broad
-                .interferences_with_bounding_volume(&bv, &mut candidates);
+            {
+                // Does this line collide with anything previously routed?
+                let mut candidates = Vec::new();
+                component_i
+                    .broad
+                    .interferences_with_bounding_volume(&bv, &mut candidates);
 
-            let a = path.0.point();
-            let b = path.1.point();
-            for i_idx in candidates.iter().map(|x| *x) {
-                if let Some(_) = line.contact(&component_i.lines[*i_idx], 0.0) {
-                    // We have a collision so we need to detour around the hull
+                for i_idx in candidates.iter().map(|x| *x) {
+                    if let Some(_) = line.contact(&component_i.lines[*i_idx], 0.0) {
+                        // We have a collision so we need to detour around the hull
 
-                    if let Some(detour) = component_i.hull.detour_path(&a, &b, 0.0) {
-                        let (cost, _) =
-                            shortest_path(&detour, path.0, path.1, |(_, _, cost)| *cost, None)
-                                .expect("must be a path");
-                        detour_cost += cost;
+                        if let Some(detour) = component_i.hull.detour_path(&a, &b, 0.0) {
+                            let (cost, _) =
+                                shortest_path(&detour, path.0, path.1, |(_, _, cost)| *cost, None)
+                                    .expect("must be a path");
+                            detour_cost += cost;
+                        }
+                    }
+                }
+            }
+
+            {
+                // Route around pads
+                let mut candidates = Vec::new();
+                self.broad_all_pads
+                    .interferences_with_bounding_volume(&bv, &mut candidates);
+
+                for padidx in candidates.iter().map(|x| **x) {
+                    let term = &self.all_pads[padidx];
+                    // Allow direct connections to the terminal
+                    if term.point == a || term.point == b {
+                        continue;
+                    }
+                    if let Some(_) = term.shape.contact(&line, self.clearance) {
+                        if let Some(detour) = term.shape.detour_path(&a, &b, 0.0) {
+                            let (cost, _) =
+                                shortest_path(&detour, path.0, path.1, |(_, _, cost)| *cost, None)
+                                    .expect("must be a path");
+                            detour_cost += cost;
+                        }
                     }
                 }
             }
