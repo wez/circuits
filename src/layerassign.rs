@@ -606,8 +606,8 @@ impl Configuration {
             {
                 let (detour_cost, _) = shortest_path(
                     &detour,
-                    OrderedPoint::from_point(&a.point),
-                    OrderedPoint::from_point(&b.point),
+                    a.point.into(),
+                    b.point.into(),
                     |(_, _, cost)| *cost,
                     None,
                 ).expect("must be a path");
@@ -843,10 +843,7 @@ impl Configuration {
 
                         if let Some(paths) = paths.get_mut(&b.layer) {
                             if ta.point != tb.point {
-                                paths.push((
-                                    OrderedPoint::from_point(&ta.point),
-                                    OrderedPoint::from_point(&tb.point),
-                                ));
+                                paths.push((ta.point.into(), tb.point.into()));
                             }
                         }
                     },

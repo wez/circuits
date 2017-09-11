@@ -66,6 +66,27 @@ impl OrderedPoint {
     }
 }
 
+impl From<Point> for OrderedPoint {
+    fn from(p: Point) -> Self {
+        OrderedPoint {
+            x: OrderedFloat(p.coords.x),
+            y: OrderedFloat(p.coords.y),
+        }
+    }
+}
+
+impl From<OrderedPoint> for Point {
+    fn from(p: OrderedPoint) -> Self {
+        Point::new(p.x.into(), p.y.into())
+    }
+}
+
+impl From<OrderedPoint> for geo::Point<f64> {
+    fn from(p: OrderedPoint) -> Self {
+        geo::Point::new(p.x.into(), p.y.into())
+    }
+}
+
 impl HasPosition for OrderedPoint {
     type Point = [f64; 2];
     fn position(&self) -> [f64; 2] {
