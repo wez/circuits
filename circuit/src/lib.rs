@@ -1,4 +1,8 @@
+extern crate kicad_parse_gen;
 extern crate petgraph;
+#[macro_use]
+extern crate lazy_static;
+
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -33,9 +37,7 @@ impl Net {
     }
 
     pub fn with_name<S: Into<String>>(s: S) -> Self {
-        Self {
-            name: s.into(),
-        }
+        Self { name: s.into() }
     }
 
     pub fn is_auto_net(&self) -> bool {
@@ -296,6 +298,22 @@ impl Circuit {}
 mod tests {
     use super::*;
     use components::*;
+
+    #[test]
+    fn kicad_symbol() {
+        let mut circuit = CircuitBuilder::default();
+        let mut sw = load_from_kicad("Switch", "SW_Push")
+            .unwrap()
+            .inst_with_name("SW1");
+        let mut diode = diode().inst_with_name("D1");
+        sw.pin_ref("2").connect_pin(diode.pin_ref("A"));
+        circuit.add_inst(sw);
+        circuit.add_inst(diode);
+
+        let circuit = circuit.build();
+
+        assert_eq!(vec![Net::with_name("N$0")], circuit.nets);
+    }
 
     #[test]
     fn one_connection() {
