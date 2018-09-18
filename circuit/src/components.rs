@@ -48,13 +48,7 @@ impl SymbolLoader {
     }
 }
 
-lazy_static! {
-    static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
-}
-
-pub fn load_from_kicad(library: &str, symbol: &str) -> Option<Component> {
-    let symbol = LOADER.lock().unwrap().resolve_symbol(library, symbol)?;
-
+fn convert_to_component(symbol: &Symbol) -> Component {
     let pins = symbol
         .draw
         .iter()
@@ -74,11 +68,20 @@ pub fn load_from_kicad(library: &str, symbol: &str) -> Option<Component> {
         })
         .collect();
 
-    Some(Component {
-        name: symbol.name,
+    Component {
+        name: symbol.name.clone(),
         description: None,
         pins,
-    })
+    }
+}
+
+lazy_static! {
+    static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
+}
+
+pub fn load_from_kicad(library: &str, symbol: &str) -> Option<Component> {
+    let symbol = LOADER.lock().unwrap().resolve_symbol(library, symbol)?;
+    Some(convert_to_component(&symbol))
 }
 
 pub fn diode() -> Component {
