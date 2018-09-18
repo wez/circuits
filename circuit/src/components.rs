@@ -3,13 +3,14 @@ use kicad_parse_gen::read_symbol_lib;
 use kicad_parse_gen::symbol_lib::{Draw, PinType as KicadPinType, Symbol, SymbolLib};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use {Component, Pin, PinType};
 
 #[derive(Default)]
 struct SymbolLoader {
     by_lib: HashMap<String, SymbolLib>,
+    by_id: HashMap<String, Arc<Component>>,
 }
 
 fn symbol_matches_name(sym: &Symbol, name: &str) -> bool {
@@ -38,6 +39,20 @@ impl SymbolLoader {
         }
 
         None
+    }
+
+    fn resolve_component(&mut self, library: &str, name: &str) -> Option<Arc<Component>> {
+        let key = format!("{}:{}", library, name);
+        if let Some(comp) = self.by_id.get(&key) {
+            return Some(Arc::clone(comp));
+        }
+
+        let sym = self.resolve_symbol(library, name)?;
+
+        let comp = Arc::new(convert_to_component(&sym));
+
+        self.by_id.insert(key, Arc::clone(&comp));
+        Some(comp)
     }
 
     fn load_library(&mut self, library: &str) -> Result<(), KicadError> {
