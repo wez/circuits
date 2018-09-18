@@ -1,0 +1,7 @@
+[package]
+authors = ["Wez Furlong"]
+name = "circuit"
+version = "0.1.0"
+
+[dependencies]
+petgraph = "0.4.13"
