@@ -94,13 +94,12 @@ lazy_static! {
     static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
 }
 
-pub fn load_from_kicad(library: &str, symbol: &str) -> Option<Component> {
-    let symbol = LOADER.lock().unwrap().resolve_symbol(library, symbol)?;
-    Some(convert_to_component(&symbol))
+pub fn load_from_kicad(library: &str, symbol: &str) -> Option<Arc<Component>> {
+    LOADER.lock().unwrap().resolve_component(library, symbol)
 }
 
-pub fn diode() -> Component {
-    Component {
+pub fn diode() -> Arc<Component> {
+    Arc::new(Component {
         name: "DIODE".into(),
         description: None,
         pins: vec![
@@ -115,11 +114,11 @@ pub fn diode() -> Component {
                 pin_type: PinType::In,
             },
         ],
-    }
+    })
 }
 
-pub fn switch() -> Component {
-    Component {
+pub fn switch() -> Arc<Component> {
+    Arc::new(Component {
         name: "SW".into(),
         description: None,
         pins: vec![
@@ -134,5 +133,5 @@ pub fn switch() -> Component {
                 pin_type: PinType::Unknown,
             },
         ],
-    }
+    })
 }

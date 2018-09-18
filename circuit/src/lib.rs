@@ -7,6 +7,7 @@ use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
+use std::sync::Arc;
 
 pub mod components;
 
@@ -80,14 +81,6 @@ pub struct Component {
 }
 
 impl Component {
-    pub fn inst_with_name<S: Into<String>>(self, name: S) -> Inst {
-        Inst::new(name, None, self)
-    }
-
-    pub fn inst_with_name_and_value<S: Into<String>>(self, name: S, value: String) -> Inst {
-        Inst::new(name, Some(value), self)
-    }
-
     pub fn pin_idx_by_name(&self, name: &str) -> Option<usize> {
         for (idx, pin) in self.pins.iter().enumerate() {
             if pin.name == name {
@@ -95,6 +88,23 @@ impl Component {
             }
         }
         None
+    }
+}
+
+/// This trait allows defining convenience methods on Arc<Component> that
+/// would otherwise logically be methods on the Component struct itself.
+pub trait MakeInst {
+    fn inst_with_name<S: Into<String>>(&self, name: S) -> Inst;
+    fn inst_with_name_and_value<S: Into<String>>(&self, name: S, value: String) -> Inst;
+}
+
+impl MakeInst for Arc<Component> {
+    fn inst_with_name<S: Into<String>>(&self, name: S) -> Inst {
+        Inst::new(name, None, Arc::clone(self))
+    }
+
+    fn inst_with_name_and_value<S: Into<String>>(&self, name: S, value: String) -> Inst {
+        Inst::new(name, Some(value), Arc::clone(self))
     }
 }
 
@@ -114,13 +124,13 @@ pub struct Inst {
     /// Value of the component, eg: 220
     pub value: Option<String>,
     /// the component definition
-    pub component: Component,
+    pub component: Arc<Component>,
     /// pin to net assignments
     assignments: Vec<PinAssignment>,
 }
 
 impl Inst {
-    pub fn new<S: Into<String>>(name: S, value: Option<String>, component: Component) -> Self {
+    pub fn new<S: Into<String>>(name: S, value: Option<String>, component: Arc<Component>) -> Self {
         Self {
             name: name.into(),
             value,
