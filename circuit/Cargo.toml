@@ -4,6 +4,11 @@ name = "circuit"
 version = "0.1.0"
 
 [dependencies]
-kicad_parse_gen = {version="7.0.2", path="/home/wez/github/kicad-parse-gen"}
+geo = "0.10.0"
 lazy_static = "1.1.0"
+ordered-float = "1.0.1"
 petgraph = "0.4.13"
+
+[dependencies.kicad_parse_gen]
+path = "/home/wez/github/kicad-parse-gen"
+version = "7.0.2"

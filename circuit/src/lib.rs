@@ -1,4 +1,6 @@
+extern crate geo;
 extern crate kicad_parse_gen;
+extern crate ordered_float;
 extern crate petgraph;
 #[macro_use]
 extern crate lazy_static;
@@ -11,6 +13,9 @@ use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 
 pub mod components;
+pub mod point;
+
+use point::Point;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PinType {
@@ -138,6 +143,12 @@ pub struct Inst {
     pub value: Option<String>,
     /// the component definition
     pub component: Arc<Component>,
+    /// Whether the footprint is placed on the opposite side of the board
+    pub flipped: bool,
+    /// The location of the centroid of the footprint
+    pub coordinates: Point,
+    /// Rotation applied to the footprint, measured in degrees
+    pub rotation: u8,
     /// pin to net assignments
     assignments: Vec<PinAssignment>,
 }
@@ -149,6 +160,9 @@ impl Inst {
             value,
             component,
             assignments: Vec::new(),
+            flipped: false,
+            coordinates: Point::new(0.0, 0.0),
+            rotation: 0,
         }
     }
 
