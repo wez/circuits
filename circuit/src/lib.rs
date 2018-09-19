@@ -79,7 +79,7 @@ pub struct Component {
     pub name: String,
     pub description: Option<String>,
     pub pins: Vec<Pin>,
-    pub footprint: Option<Module>,
+    pub footprint: Module,
 }
 
 impl Component {
@@ -98,7 +98,7 @@ impl PartialEq for Component {
         self.name == other.name
             && self.description == other.description
             && self.pins == other.pins
-            && self.footprint.is_some() == other.footprint.is_some()
+            && self.footprint.name == other.footprint.name
     }
 }
 
@@ -323,28 +323,9 @@ mod tests {
     use components::*;
 
     #[test]
-    fn kicad_symbol() {
-        let mut circuit = CircuitBuilder::default();
-        let mut sw = load_from_kicad(
-            "Switch",
-            "SW_Push",
-            "Button_Switch_Keyboard:SW_Cherry_MX1A_1.00u_PCB",
-        ).unwrap()
-            .inst_with_name("SW1");
-        let mut diode = diode().inst_with_name("D1");
-        sw.pin_ref("2").connect_pin(diode.pin_ref("A"));
-        circuit.add_inst(sw);
-        circuit.add_inst(diode);
-
-        let circuit = circuit.build();
-
-        assert_eq!(vec![Net::with_name("N$0")], circuit.nets);
-    }
-
-    #[test]
     fn one_connection() {
         let mut circuit = CircuitBuilder::default();
-        let mut sw = switch().inst_with_name("SW1");
+        let mut sw = mx_switch().inst_with_name("SW1");
         let mut diode = diode().inst_with_name("D1");
         sw.pin_ref("2").connect_pin(diode.pin_ref("A"));
         circuit.add_inst(sw);
@@ -358,7 +339,7 @@ mod tests {
     #[test]
     fn redundant_nets() {
         let mut circuit = CircuitBuilder::default();
-        let mut sw = switch().inst_with_name("SW1");
+        let mut sw = mx_switch().inst_with_name("SW1");
         let mut diode = diode().inst_with_name("D1");
 
         let _ = Net::new();

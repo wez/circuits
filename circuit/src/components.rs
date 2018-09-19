@@ -128,7 +128,7 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
         name: symbol.name.clone(),
         description: None,
         pins,
-        footprint: Some(module),
+        footprint: module,
     }
 }
 
@@ -144,41 +144,17 @@ pub fn load_from_kicad(library: &str, symbol: &str, footprint: &str) -> Option<A
 }
 
 pub fn diode() -> Arc<Component> {
-    Arc::new(Component {
-        name: "DIODE".into(),
-        description: None,
-        footprint: None,
-        pins: vec![
-            Pin {
-                name: "K".into(),
-                description: Some("Cathode".into()),
-                pin_type: PinType::In,
-            },
-            Pin {
-                name: "A".into(),
-                description: Some("Anode".into()),
-                pin_type: PinType::In,
-            },
-        ],
-    })
+    load_from_kicad(
+        "pspice",
+        "DIODE",
+        "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
+    ).unwrap()
 }
 
-pub fn switch() -> Arc<Component> {
-    Arc::new(Component {
-        name: "SW".into(),
-        description: None,
-        footprint: None,
-        pins: vec![
-            Pin {
-                name: "1".into(),
-                description: None,
-                pin_type: PinType::Unknown,
-            },
-            Pin {
-                name: "2".into(),
-                description: None,
-                pin_type: PinType::Unknown,
-            },
-        ],
-    })
+pub fn mx_switch() -> Arc<Component> {
+    load_from_kicad(
+        "Switch",
+        "SW_Push",
+        "Button_Switch_Keyboard:SW_Cherry_MX1A_1.00u_PCB",
+    ).unwrap()
 }
