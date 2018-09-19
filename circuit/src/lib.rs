@@ -3,6 +3,7 @@ extern crate petgraph;
 #[macro_use]
 extern crate lazy_static;
 
+use kicad_parse_gen::footprint::Module;
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -73,11 +74,12 @@ pub struct Pin {
 }
 
 /// Defines a circuit component
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub struct Component {
     pub name: String,
     pub description: Option<String>,
     pub pins: Vec<Pin>,
+    pub footprint: Option<Module>,
 }
 
 impl Component {
@@ -90,6 +92,17 @@ impl Component {
         None
     }
 }
+
+impl PartialEq for Component {
+    fn eq(&self, other: &Component) -> bool {
+        self.name == other.name
+            && self.description == other.description
+            && self.pins == other.pins
+            && self.footprint.is_some() == other.footprint.is_some()
+    }
+}
+
+impl Eq for Component {}
 
 /// This trait allows defining convenience methods on Arc<Component> that
 /// would otherwise logically be methods on the Component struct itself.
@@ -312,8 +325,11 @@ mod tests {
     #[test]
     fn kicad_symbol() {
         let mut circuit = CircuitBuilder::default();
-        let mut sw = load_from_kicad("Switch", "SW_Push")
-            .unwrap()
+        let mut sw = load_from_kicad(
+            "Switch",
+            "SW_Push",
+            "Button_Switch_Keyboard:SW_Cherry_MX1A_1.00u_PCB",
+        ).unwrap()
             .inst_with_name("SW1");
         let mut diode = diode().inst_with_name("D1");
         sw.pin_ref("2").connect_pin(diode.pin_ref("A"));
