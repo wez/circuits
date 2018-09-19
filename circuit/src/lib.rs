@@ -5,7 +5,10 @@ extern crate petgraph;
 #[macro_use]
 extern crate lazy_static;
 
-use kicad_parse_gen::footprint::Module;
+use kicad_parse_gen::footprint::{
+    Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
+};
+use kicad_parse_gen::layout::{Area, General, Host, Layer, LayerType, Layout, Setup};
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -329,7 +332,221 @@ pub struct Circuit {
     nets: Vec<Net>,
 }
 
-impl Circuit {}
+impl Circuit {
+    pub fn to_pcb_layout(&self) -> Layout {
+        Layout {
+            host: Host {
+                tool: "rust circuit crate".into(),
+                build: "0.1.0".into(),
+            },
+            general: General {
+                links: 0,
+                no_connects: 0,
+                area: Area {
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: 10.0,
+                    y2: 10.0,
+                },
+                thickness: 1.6,
+                drawings: 0,
+                tracks: 0,
+                zones: 0,
+                modules: 0,
+                nets: 0,
+            },
+            page: "USLetter".into(),
+            setup: Setup {
+                elements: vec![],
+                pcbplotparams: vec![],
+            },
+            layers: vec![
+                Layer {
+                    num: 0,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::Cu,
+                    },
+                    layer_type: LayerType::Signal,
+                    hide: false,
+                },
+                Layer {
+                    num: 1,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::Cu,
+                    },
+                    layer_type: LayerType::Signal,
+                    hide: false,
+                },
+                Layer {
+                    num: 2,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::Adhes,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 3,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::Adhes,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 4,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::Paste,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 5,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::Paste,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 6,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::SilkS,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 7,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::SilkS,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 8,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::Mask,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 9,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::Mask,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 10,
+                    layer: FootprintLayer {
+                        side: LayerSide::Dwgs,
+                        t: FPLayerType::User,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 11,
+                    layer: FootprintLayer {
+                        side: LayerSide::Cmts,
+                        t: FPLayerType::User,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 12,
+                    layer: FootprintLayer {
+                        side: LayerSide::Eco1,
+                        t: FPLayerType::User,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 13,
+                    layer: FootprintLayer {
+                        side: LayerSide::Eco2,
+                        t: FPLayerType::User,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 14,
+                    layer: FootprintLayer {
+                        side: LayerSide::Edge,
+                        t: FPLayerType::Cuts,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 15,
+                    layer: FootprintLayer {
+                        side: LayerSide::None,
+                        t: FPLayerType::Margin,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 16,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::CrtYd,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 17,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::CrtYd,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 18,
+                    layer: FootprintLayer {
+                        side: LayerSide::Back,
+                        t: FPLayerType::Fab,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+                Layer {
+                    num: 19,
+                    layer: FootprintLayer {
+                        side: LayerSide::Front,
+                        t: FPLayerType::Fab,
+                    },
+                    layer_type: LayerType::User,
+                    hide: false,
+                },
+            ],
+            elements: vec![],
+            version: 20171130,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -346,6 +563,13 @@ mod tests {
         circuit.add_inst(diode);
 
         let circuit = circuit.build();
+
+        use kicad_parse_gen::write_layout;
+        use std::path::PathBuf;
+        write_layout(
+            &circuit.to_pcb_layout(),
+            &PathBuf::from("/tmp/woot.kicad_pcb"),
+        ).unwrap();
 
         assert_eq!(vec![Net::with_name("N$0")], circuit.nets);
     }
