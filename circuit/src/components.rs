@@ -121,8 +121,7 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
                 },
             }),
             _ => None,
-        })
-        .collect();
+        }).collect();
 
     Component {
         name: symbol.name.clone(),

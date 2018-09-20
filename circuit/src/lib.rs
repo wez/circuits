@@ -6,9 +6,12 @@ extern crate petgraph;
 extern crate lazy_static;
 
 use kicad_parse_gen::footprint::{
-    Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
+    Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module, Net as KicadFootprintNet,
+    NetName,
 };
-use kicad_parse_gen::layout::{Area, Element, General, Host, Layer, LayerType, Layout, Setup};
+use kicad_parse_gen::layout::{
+    Area, Element, General, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
+};
 use kicad_parse_gen::{Adjust, BoundingBox};
 use petgraph::prelude::*;
 use std::cmp::Ordering;
@@ -20,7 +23,7 @@ pub mod components;
 pub mod footprint;
 pub mod point;
 
-use footprint::{HasLocation, LayerManipulation};
+use footprint::{AssignComponentNet, HasLocation, LayerManipulation};
 use point::{Point, Rotation};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -264,8 +267,7 @@ fn merge_connected_nets(mut instances: Vec<Inst>) -> (Vec<Inst>, Vec<Net>) {
                 .filter_map(|node| match node {
                     Node::NetNode(net_id) => id_to_net.get(net_id),
                     _ => None,
-                })
-                .collect();
+                }).collect();
 
             // Pick the winning net
             nets.sort_unstable();
@@ -339,8 +341,43 @@ impl Circuit {
     pub fn to_pcb_layout(&self) -> Layout {
         let mut elements = Vec::new();
 
+        let mut net_to_idx = HashMap::new();
+
+        // Reserve net id 0; kicad doesn't like it when a module
+        // references id zero, so let's make sure that we don't use
+        // it for anything in here.
+        elements.push(Element::Net(KicadNet {
+            num: 0,
+            name: NetName("".into()),
+        }));
+
+        for (net_idx, net) in self.nets.iter().enumerate() {
+            net_to_idx.insert(net.clone(), net_idx + 1);
+
+            elements.push(Element::Net(KicadNet {
+                num: 1 + net_idx as i64,
+                name: NetName(net.name.clone()),
+            }));
+        }
+
         for inst in &self.instances {
             let mut footprint = inst.component.footprint.clone();
+
+            // assign pads to nets
+            for ass in &inst.assignments {
+                let net_idx = net_to_idx.get(&ass.net).unwrap();
+                let net = KicadFootprintNet {
+                    name: NetName(ass.net.name.clone()),
+                    num: *net_idx as i64,
+                };
+
+                footprint.set_net(
+                    &inst.component.pins[ass.pin_index].name,
+                    ass.pin_index,
+                    &net,
+                );
+            }
+
             footprint.set_location(inst.coordinates, inst.rotation);
             if inst.flipped {
                 footprint.flip_layer();
@@ -366,8 +403,8 @@ impl Circuit {
                 drawings: 0,
                 tracks: 0,
                 zones: 0,
-                modules: 0,
-                nets: 0,
+                modules: self.instances.len() as i64,
+                nets: 1 + net_to_idx.len() as i64,
             },
             page: "USLetter".into(),
             setup: Setup {
