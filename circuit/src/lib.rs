@@ -9,6 +9,7 @@ use kicad_parse_gen::footprint::{
     Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
 };
 use kicad_parse_gen::layout::{Area, Element, General, Host, Layer, LayerType, Layout, Setup};
+use kicad_parse_gen::{Adjust, BoundingBox};
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -347,7 +348,7 @@ impl Circuit {
             elements.push(Element::Module(footprint));
         }
 
-        Layout {
+        let mut layout = Layout {
             host: Host {
                 tool: "rust circuit crate".into(),
                 build: "0.1.0".into(),
@@ -557,7 +558,16 @@ impl Circuit {
             ],
             elements,
             version: 20171130,
-        }
+        };
+
+        // Try to place the content tidily in the top left corner of the sheet.
+        // (25, 25) is a nice top left corner location.
+        let bounds = layout.bounding_box();
+        let x_off = -bounds.x1 + 25.0;
+        let y_off = -bounds.y1 + 25.0;
+        layout.adjust(x_off, y_off);
+
+        layout
     }
 }
 
@@ -576,7 +586,7 @@ mod tests {
         circuit.add_inst(diode);
 
         let mut another_sw = mx_switch().inst_with_name("SW2");
-        another_sw.flipped = true;
+        another_sw.rotation = Rotation::new(30.0);
         another_sw.coordinates = Point::new(30.0, 30.0);
         circuit.add_inst(another_sw);
 
