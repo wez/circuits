@@ -516,8 +516,8 @@ impl Circuit {
                 area: Area {
                     x1: 0.0,
                     y1: 0.0,
-                    x2: 10.0,
-                    y2: 10.0,
+                    x2: 0.0,
+                    y2: 0.0,
                 },
                 thickness: 1.6,
                 drawings: 0,
@@ -725,6 +725,11 @@ impl Circuit {
         let x_off = -bounds.x1 + 25.0;
         let y_off = -bounds.y1 + 25.0;
         layout.adjust(x_off, y_off);
+
+        layout.general.area.x1 = 25.0;
+        layout.general.area.x2 = -bounds.x1 + 25.0 + bounds.x2;
+        layout.general.area.y1 = 25.0;
+        layout.general.area.y2 = -bounds.y1 + 25.0 + bounds.y2;
 
         layout
     }
