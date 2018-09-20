@@ -8,7 +8,7 @@ extern crate lazy_static;
 use kicad_parse_gen::footprint::{
     Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
 };
-use kicad_parse_gen::layout::{Area, General, Host, Layer, LayerType, Layout, Setup};
+use kicad_parse_gen::layout::{Area, Element, General, Host, Layer, LayerType, Layout, Setup};
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -16,9 +16,11 @@ use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
 use std::sync::Arc;
 
 pub mod components;
+pub mod footprint;
 pub mod point;
 
-use point::Point;
+use footprint::{HasLocation, LayerManipulation};
+use point::{Point, Rotation};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PinType {
@@ -151,7 +153,7 @@ pub struct Inst {
     /// The location of the centroid of the footprint
     pub coordinates: Point,
     /// Rotation applied to the footprint, measured in degrees
-    pub rotation: u8,
+    pub rotation: Rotation,
     /// pin to net assignments
     assignments: Vec<PinAssignment>,
 }
@@ -165,7 +167,7 @@ impl Inst {
             assignments: Vec::new(),
             flipped: false,
             coordinates: Point::new(0.0, 0.0),
-            rotation: 0,
+            rotation: Rotation::new(0.0),
         }
     }
 
@@ -334,6 +336,17 @@ pub struct Circuit {
 
 impl Circuit {
     pub fn to_pcb_layout(&self) -> Layout {
+        let mut elements = Vec::new();
+
+        for inst in &self.instances {
+            let mut footprint = inst.component.footprint.clone();
+            footprint.set_location(inst.coordinates, inst.rotation);
+            if inst.flipped {
+                footprint.flip_layer();
+            }
+            elements.push(Element::Module(footprint));
+        }
+
         Layout {
             host: Host {
                 tool: "rust circuit crate".into(),
@@ -542,7 +555,7 @@ impl Circuit {
                     hide: false,
                 },
             ],
-            elements: vec![],
+            elements,
             version: 20171130,
         }
     }
@@ -561,6 +574,11 @@ mod tests {
         sw.pin_ref("2").connect_pin(diode.pin_ref("A"));
         circuit.add_inst(sw);
         circuit.add_inst(diode);
+
+        let mut another_sw = mx_switch().inst_with_name("SW2");
+        another_sw.flipped = true;
+        another_sw.coordinates = Point::new(30.0, 30.0);
+        circuit.add_inst(another_sw);
 
         let circuit = circuit.build();
 

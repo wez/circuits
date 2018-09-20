@@ -34,3 +34,33 @@ impl DerefMut for Point {
         &mut self.0
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub struct Rotation(NotNan<f64>);
+
+impl Rotation {
+    pub fn new(degrees: f64) -> Self {
+        Rotation(NotNan::new(degrees).unwrap())
+    }
+}
+
+impl PartialEq for Rotation {
+    fn eq(&self, other: &Rotation) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for Rotation {}
+
+impl Deref for Rotation {
+    type Target = NotNan<f64>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Rotation {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
