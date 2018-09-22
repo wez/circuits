@@ -6,15 +6,15 @@ extern crate petgraph;
 extern crate lazy_static;
 
 use geo::prelude::*;
-use geo::{Geometry, GeometryCollection, LineString, MultiPolygon, Polygon, Rect};
+use geo::{Geometry, GeometryCollection, MultiPolygon, Polygon, Rect};
 use kicad_parse_gen::footprint::{
-    Element as FpElement, Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
-    Net as KicadFootprintNet, NetName, Xy, XyType,
+    Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module, Net as KicadFootprintNet,
+    NetName, Xy, XyType,
 };
 use kicad_parse_gen::layout::{
     Area, Element, General, GrLine, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
 };
-use kicad_parse_gen::{Adjust, BoundingBox};
+use kicad_parse_gen::Adjust;
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -765,6 +765,33 @@ impl Circuit {
         };
 
         apply_seeed_drc(&mut layout);
+        let hull = compute_hull(&layout);
+
+        for line in hull.exterior.lines() {
+            layout.elements.push(Element::GrLine(GrLine {
+                start: Xy {
+                    x: line.start.x,
+                    y: line.start.y,
+                    t: XyType::Start,
+                },
+                end: Xy {
+                    x: line.end.x,
+                    y: line.end.y,
+                    t: XyType::End,
+                },
+                angle: 0.0,
+                layer: FootprintLayer {
+                    side: LayerSide::Edge,
+                    t: FPLayerType::Cuts,
+                },
+                width: 0.15,
+                tstamp: None,
+            }));
+        }
+
+        // TODO: add area fills for GND and 3V3 nets
+
+        adjust_to_fit_page(&mut layout);
 
         layout
     }
@@ -830,41 +857,11 @@ mod tests {
         circuit.add_inst(sw);
         circuit.add_inst(diode);
 
-        let mut another_sw = mx_switch().inst_with_name("SW2");
-        another_sw.rotation = Rotation::new(30.0);
-        another_sw.coordinates = Point::new(30.0, 30.0);
-        circuit.add_inst(another_sw);
-
         let circuit = circuit.build();
+        let layout = circuit.to_pcb_layout();
 
         use kicad_parse_gen::write_layout;
         use std::path::PathBuf;
-        let mut layout = circuit.to_pcb_layout();
-        let hull = compute_hull(&layout);
-
-        for line in hull.exterior.lines() {
-            layout.elements.push(Element::GrLine(GrLine {
-                start: Xy {
-                    x: line.start.x,
-                    y: line.start.y,
-                    t: XyType::Start,
-                },
-                end: Xy {
-                    x: line.end.x,
-                    y: line.end.y,
-                    t: XyType::End,
-                },
-                angle: 0.0,
-                layer: FootprintLayer {
-                    side: LayerSide::Edge,
-                    t: FPLayerType::Cuts,
-                },
-                width: 0.15,
-                tstamp: None,
-            }));
-        }
-
-        adjust_to_fit_page(&mut layout);
         write_layout(&layout, &PathBuf::from("/tmp/woot.kicad_pcb")).unwrap();
 
         assert_eq!(vec![Net::with_name("N$0")], circuit.nets);

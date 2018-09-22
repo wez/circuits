@@ -4,7 +4,7 @@
 use geo::prelude::*;
 use geo::{Coordinate, Geometry, GeometryCollection, Line, LineString, Point as GeoPoint, Polygon};
 use kicad_parse_gen::footprint::{
-    At, Element, Flip, FpLine, FpPoly, Layer, LayerSide, LayerType, Module, Net as KicadNet, Pad,
+    At, Element, Flip, FpLine, FpPoly, Layer, Module, Net as KicadNet, Pad,
     PadShape, Pts, Xy, XyType,
 };
 
@@ -27,7 +27,7 @@ pub trait ToGeom {
     fn to_geom(&self) -> Geometry<f64>;
 }
 
-fn is_physical_layer(layer: &Layer) -> bool {
+fn is_physical_layer(_layer: &Layer) -> bool {
     // TODO: actually check the layer
     true
 }
