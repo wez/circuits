@@ -5,12 +5,14 @@ extern crate petgraph;
 #[macro_use]
 extern crate lazy_static;
 
+use geo::prelude::*;
+use geo::{Geometry, GeometryCollection, LineString, MultiPolygon, Polygon};
 use kicad_parse_gen::footprint::{
-    Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module, Net as KicadFootprintNet,
-    NetName,
+    Element as FpElement, Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
+    Net as KicadFootprintNet, NetName, Xy, XyType,
 };
 use kicad_parse_gen::layout::{
-    Area, Element, General, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
+    Area, Element, General, GrLine, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
 };
 use kicad_parse_gen::{Adjust, BoundingBox};
 use petgraph::prelude::*;
@@ -23,7 +25,7 @@ pub mod components;
 pub mod footprint;
 pub mod point;
 
-use footprint::{AssignComponentNet, HasLocation, LayerManipulation};
+use footprint::{AssignComponentNet, HasLocation, LayerManipulation, ToGeom};
 use point::{Point, Rotation};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -192,6 +194,55 @@ impl Inst {
             }
         }
         false
+    }
+
+    /// Return the footprint for this instance with its location
+    /// filled out.  This footprint doesn't have any pad assignment
+    /// performed.  It is intended to be used to compute size and
+    /// bounds only.
+    pub fn make_footprint(&self) -> Module {
+        let mut footprint = self.component.footprint.clone();
+        footprint.set_location(self.coordinates, self.rotation);
+        if self.flipped {
+            footprint.flip_layer();
+        }
+        footprint
+    }
+
+    pub fn hull(&self) -> Polygon<f64> {
+        convex_hull(self.make_footprint().to_geom())
+    }
+}
+
+/// Convert a collection into a vector of its constituent polygons
+fn iter_polygons(collection: GeometryCollection<f64>) -> Vec<Polygon<f64>> {
+    let mut polys = vec![];
+    for geom in collection {
+        match geom {
+            Geometry::GeometryCollection(collection) => {
+                polys.append(&mut iter_polygons(collection));
+            }
+            Geometry::Line(line) => {
+                polys.push(Polygon::new(vec![line.start, line.end].into(), vec![]))
+            }
+            Geometry::Polygon(poly) => polys.push(poly),
+            _ => {
+                println!("BOO: {:?}", geom);
+            }
+        }
+    }
+    polys
+}
+
+fn convex_hull_collection(collection: GeometryCollection<f64>) -> Polygon<f64> {
+    let multi: MultiPolygon<f64> = iter_polygons(collection).into_iter().collect();
+    multi.convex_hull()
+}
+
+fn convex_hull(geom: Geometry<f64>) -> Polygon<f64> {
+    match geom {
+        Geometry::GeometryCollection(collection) => convex_hull_collection(collection),
+        _ => panic!("only GeometryCollection is supported"),
     }
 }
 
@@ -481,7 +532,7 @@ impl Circuit {
         }
 
         for inst in &self.instances {
-            let mut footprint = inst.component.footprint.clone();
+            let mut footprint = inst.make_footprint();
 
             // assign pads to nets
             for ass in &inst.assignments {
@@ -498,10 +549,6 @@ impl Circuit {
                 );
             }
 
-            footprint.set_location(inst.coordinates, inst.rotation);
-            if inst.flipped {
-                footprint.flip_layer();
-            }
             elements.push(Element::Module(footprint));
         }
 
@@ -719,20 +766,34 @@ impl Circuit {
 
         apply_seeed_drc(&mut layout);
 
-        // Try to place the content tidily in the top left corner of the sheet.
-        // (25, 25) is a nice top left corner location.
-        let bounds = layout.bounding_box();
-        let x_off = -bounds.x1 + 25.0;
-        let y_off = -bounds.y1 + 25.0;
-        layout.adjust(x_off, y_off);
-
-        layout.general.area.x1 = 25.0;
-        layout.general.area.x2 = -bounds.x1 + 25.0 + bounds.x2;
-        layout.general.area.y1 = 25.0;
-        layout.general.area.y2 = -bounds.y1 + 25.0 + bounds.y2;
-
         layout
     }
+}
+
+/// Try to place the content tidily in the top left corner of the sheet.
+/// (25, 25) is a nice top left corner location.
+fn adjust_to_fit_page(layout: &mut Layout) {
+    // FIXME: compute our own bounding box
+    let bounds = layout.bounding_box();
+    let x_off = -bounds.x1 + 25.0;
+    let y_off = -bounds.y1 + 25.0;
+    layout.adjust(x_off, y_off);
+
+    layout.general.area.x1 = 25.0;
+    layout.general.area.x2 = -bounds.x1 + 25.0 + bounds.x2;
+    layout.general.area.y1 = 25.0;
+    layout.general.area.y2 = -bounds.y1 + 25.0 + bounds.y2;
+}
+
+fn compute_hull(layout: &Layout) -> Polygon<f64> {
+    let collection: GeometryCollection<f64> = layout
+        .elements
+        .iter()
+        .filter_map(|ele| match ele {
+            Element::Module(module) => Some(module.to_geom()),
+            _ => None,
+        }).collect();
+    convex_hull_collection(collection)
 }
 
 #[cfg(test)]
@@ -758,10 +819,33 @@ mod tests {
 
         use kicad_parse_gen::write_layout;
         use std::path::PathBuf;
-        write_layout(
-            &circuit.to_pcb_layout(),
-            &PathBuf::from("/tmp/woot.kicad_pcb"),
-        ).unwrap();
+        let mut layout = circuit.to_pcb_layout();
+        let hull = compute_hull(&layout);
+
+        for line in hull.exterior.lines() {
+            layout.elements.push(Element::GrLine(GrLine {
+                start: Xy {
+                    x: line.start.x,
+                    y: line.start.y,
+                    t: XyType::Start,
+                },
+                end: Xy {
+                    x: line.end.x,
+                    y: line.end.y,
+                    t: XyType::End,
+                },
+                angle: 0.0,
+                layer: FootprintLayer {
+                    side: LayerSide::Edge,
+                    t: FPLayerType::Cuts,
+                },
+                width: 0.15,
+                tstamp: None,
+            }));
+        }
+
+        //adjust_to_fit_page(&mut layout);
+        write_layout(&layout, &PathBuf::from("/tmp/woot.kicad_pcb")).unwrap();
 
         assert_eq!(vec![Net::with_name("N$0")], circuit.nets);
     }
