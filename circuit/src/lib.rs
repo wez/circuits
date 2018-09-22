@@ -6,7 +6,7 @@ extern crate petgraph;
 extern crate lazy_static;
 
 use geo::prelude::*;
-use geo::{Geometry, GeometryCollection, LineString, MultiPolygon, Polygon};
+use geo::{Geometry, GeometryCollection, LineString, MultiPolygon, Polygon, Rect};
 use kicad_parse_gen::footprint::{
     Element as FpElement, Layer as FootprintLayer, LayerSide, LayerType as FPLayerType, Module,
     Net as KicadFootprintNet, NetName, Xy, XyType,
@@ -770,29 +770,49 @@ impl Circuit {
     }
 }
 
-/// Try to place the content tidily in the top left corner of the sheet.
-/// (25, 25) is a nice top left corner location.
-fn adjust_to_fit_page(layout: &mut Layout) {
-    // FIXME: compute our own bounding box
-    let bounds = layout.bounding_box();
-    let x_off = -bounds.x1 + 25.0;
-    let y_off = -bounds.y1 + 25.0;
-    layout.adjust(x_off, y_off);
-
-    layout.general.area.x1 = 25.0;
-    layout.general.area.x2 = -bounds.x1 + 25.0 + bounds.x2;
-    layout.general.area.y1 = 25.0;
-    layout.general.area.y2 = -bounds.y1 + 25.0 + bounds.y2;
-}
-
-fn compute_hull(layout: &Layout) -> Polygon<f64> {
-    let collection: GeometryCollection<f64> = layout
+fn layout_to_geom_collection(layout: &Layout) -> GeometryCollection<f64> {
+    layout
         .elements
         .iter()
         .filter_map(|ele| match ele {
             Element::Module(module) => Some(module.to_geom()),
             _ => None,
-        }).collect();
+        }).collect()
+}
+
+fn compute_bounding_box(layout: &Layout) -> Rect<f64> {
+    let collection = layout_to_geom_collection(layout);
+    let multi: MultiPolygon<f64> = iter_polygons(collection).into_iter().collect();
+    multi
+        .bounding_rect()
+        .expect("unable to compute bounding rect for layout")
+}
+
+/// Try to place the content tidily in the sheet.
+fn adjust_to_fit_page(layout: &mut Layout) {
+    // US Letter dimensions
+    const LETTER_WIDTH: f64 = 280.0;
+    const LETTER_HEIGHT: f64 = 218.0;
+
+    let bounds = compute_bounding_box(layout);
+
+    let width = bounds.max.x - bounds.min.x;
+    let height = bounds.max.y - bounds.min.y;
+
+    // Center it
+    let x_off = (LETTER_WIDTH - width) / 2.0;
+    let y_off = (LETTER_HEIGHT - height) / 2.0;
+
+    layout.adjust(x_off - bounds.min.x, y_off - bounds.min.y);
+
+    layout.general.area.x1 = x_off;
+    layout.general.area.x2 = x_off + width;
+    layout.general.area.y1 = y_off;
+    layout.general.area.y2 = y_off + height;
+}
+
+fn compute_hull(layout: &Layout) -> Polygon<f64> {
+    let collection = layout_to_geom_collection(layout);
     convex_hull_collection(collection)
 }
 
@@ -844,7 +864,7 @@ mod tests {
             }));
         }
 
-        //adjust_to_fit_page(&mut layout);
+        adjust_to_fit_page(&mut layout);
         write_layout(&layout, &PathBuf::from("/tmp/woot.kicad_pcb")).unwrap();
 
         assert_eq!(vec![Net::with_name("N$0")], circuit.nets);
