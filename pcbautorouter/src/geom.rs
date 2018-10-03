@@ -268,7 +268,7 @@ impl Shape {
             simpler
                 .0
                 .into_iter()
-                .map(|p| Point::new(p.x(), p.y()))
+                .map(|p| Point::new(p.x, p.y))
                 .collect(),
             origin(),
             None,
@@ -290,7 +290,7 @@ impl Shape {
         let hull = polys.convex_hull();
         let points = hull.exterior
             .into_iter()
-            .map(|p| Point::new(p.x(), p.y()))
+            .map(|p| Point::new(p.x, p.y))
             .collect();
         Shape::polygon(points, origin(), None)
     }

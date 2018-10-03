@@ -1,5 +1,5 @@
 // https://github.com/steveklabnik/rustdoc/issues/96
-#![allow(unused_doc_comment)]
+#![allow(unused_doc_comments)]
 
 use std::fs::File;
 use std::io::prelude::*;

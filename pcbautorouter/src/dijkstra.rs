@@ -90,7 +90,7 @@ where
                 continue;
             }
             Vacant(ent) => {
-                *ent.insert(node_score);
+                ent.insert(node_score);
             }
         }
         if goal == node {
@@ -118,7 +118,7 @@ where
                         counter += 1;
                     },
                     Vacant(ent) => {
-                        *ent.insert(total_dist);
+                        ent.insert(total_dist);
                         pred.insert(next, node);
                         visit_next.push(MinScored(total_dist, next, counter));
                         counter += 1;

@@ -46,7 +46,6 @@ use std::sync::Arc;
 
 use features::Terminal;
 use layerpath::{CDTGraph, PathConfiguration};
-use spade::delaunay::Subdivision;
 use geom::OrderedPoint;
 use gui::run_gui;
 
@@ -67,7 +66,7 @@ impl Notify {
     }
 }
 
-use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle};
+use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle,CdtEdge};
 use spade::kernels::FloatKernel;
 type CDT = ConstrainedDelaunayTriangulation<OrderedPoint, FloatKernel>;
 
@@ -89,7 +88,7 @@ fn cdt_add_obstacle(cdt: &mut CDT, shape: &geom::Shape, clearance: f64) {
         if a == b {
             continue;
         }
-        cdt.add_new_constraint_edge(OrderedPoint::from_point(a), OrderedPoint::from_point(&b));
+        cdt.add_constraint_edge(OrderedPoint::from_point(a), OrderedPoint::from_point(&b));
     }
 }
 
@@ -109,7 +108,7 @@ fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal_point: &geom::Point,
 
         // Make sure that the terminal center is reachable from
         // the pad outline
-        cdt.add_new_constraint_edge(
+        cdt.add_constraint_edge(
             OrderedPoint::from_point(&pt),
             OrderedPoint::from_point(&terminal_point),
         );
@@ -118,7 +117,7 @@ fn cdt_add_pad(cdt: &mut CDT, shape: &geom::Shape, terminal_point: &geom::Point,
 
 fn cdt_to_graph<F>(graph: &mut CDTGraph, cdt: &CDT, mut edge_cost: F)
 where
-    F: FnMut(&EdgeHandle<OrderedPoint>) -> Option<f64>,
+    F: FnMut(&EdgeHandle<OrderedPoint, CdtEdge>) -> Option<f64>,
 {
     for edge in cdt.edges() {
         if let Some(cost) = edge_cost(&edge) {
@@ -226,7 +225,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
         }
 
         {
-            let edge_cost = |edge: &EdgeHandle<OrderedPoint>| {
+            let edge_cost = |edge: &EdgeHandle<OrderedPoint,CdtEdge>| {
                 let from = &*edge.from();
                 let to = &*edge.to();
                 let a = from.point();
