@@ -10,5 +10,6 @@ ordered-float = "1.0.1"
 petgraph = "0.4.13"
 
 [dependencies.kicad_parse_gen]
-path = "/home/wez/github/kicad-parse-gen"
+git = "https://github.com/wez/kicad-parse-gen.git"
+branch = "symbolorder"
 version = "7.0.2"
