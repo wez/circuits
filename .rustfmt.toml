@@ -1,0 +1,5 @@
+max_width = 100
+error_on_line_overflow = false
+error_on_line_overflow_comments = false
+wrap_comments = true
+newline_style = "Unix"

@@ -1,0 +1,22 @@
+[package]
+authors = ["wez"]
+name = "pcbautorouter"
+version = "0.1.0"
+
+[dependencies]
+clap = "2.26.0"
+error-chain = "0.10.0"
+geo = "0.4.13"
+indicatif = "0.7.0"
+itertools = "0.6.1"
+maplit = "0.1.4"
+nalgebra = "0.12.3"
+ncollide = "0.12.0"
+ordered-float = "0.5.0"
+petgraph = "0.4.5"
+piston_window = "0.70.0"
+spade = { git = "https://github.com/Stoeoef/spade.git", branch = "cdt" }
+
+[dependencies.nom]
+features = ["verbose-errors"]
+version = "3.2.0"
