@@ -1,5 +1,5 @@
 use crate::{Component, Pin, PinType};
-use failure::{format_err, Fallible};
+use failure::{bail, format_err, Fallible};
 use kicad_parse_gen::footprint::{self, Module};
 use kicad_parse_gen::symbol_lib::{self, Draw, PinType as KicadPinType, Symbol, SymbolLib};
 use kicad_parse_gen::{read_module, read_symbol_lib};
@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex};
 lazy_static! {
     static ref CACHE: Mutex<Cache<Client>> = Mutex::new(init_cache().unwrap());
     static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
-    static ref KICAD_INSTALLATION: PathBuf = find_kicad_install();
 }
 
 fn init_cache() -> Fallible<Cache<Client>> {
@@ -76,7 +75,7 @@ impl FootprintLocator {
                     .map_err(|e| format_err!("while parsing {} as a footprint: {}", url, e))
             }
             FootprintLocator::LocallyInstalledKiCad { library, name } => {
-                let mut abs_path = KICAD_INSTALLATION.join("modules");
+                let mut abs_path = find_kicad_share()?.join("modules");
                 abs_path.push(format!("{}.pretty", library));
                 abs_path.push(format!("{}.kicad_mod", name));
                 read_module(&abs_path).map_err(|e| format_err!("{}: {}", e, abs_path.display()))
@@ -136,7 +135,7 @@ impl LibraryLocator {
             LibraryLocator::LocalFile(path) => read_symbol_lib(Path::new(&path))
                 .map_err(|e| format_err!("{}: {}", e, path.display())),
             LibraryLocator::LocallyInstalledKiCad(name) => {
-                let path = KICAD_INSTALLATION.join(format!("library/{}.lib", name));
+                let path = find_kicad_share()?.join(format!("library/{}.lib", name));
                 read_symbol_lib(Path::new(&path))
                     .map_err(|e| format_err!("{}: {}", e, path.display()))
             }
@@ -258,7 +257,8 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
     }
 }
 
-pub fn find_kicad_install() -> PathBuf {
+/// Locate the shared kicad data files on the local system
+pub fn find_kicad_share() -> Fallible<PathBuf> {
     let candidates = [
         "/Library/Application Support/kicad",
         "/usr/local/share/kicad",
@@ -267,12 +267,13 @@ pub fn find_kicad_install() -> PathBuf {
     for candidate in &candidates {
         let candidate = Path::new(candidate);
         if candidate.is_dir() {
-            return candidate.to_path_buf();
+            return Ok(candidate.to_path_buf());
         }
     }
-    panic!("cannot find your kicad installation");
+    bail!("cannot find your kicad installation");
 }
 
+/// Load a Component from the supplied library and footprint locators
 pub fn load(
     library: LibraryLocator,
     symbol: &str,
