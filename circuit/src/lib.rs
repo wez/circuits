@@ -762,7 +762,7 @@ impl Circuit {
         apply_seeed_drc(&mut layout);
         let hull = compute_hull(&layout);
 
-        for line in hull.exterior.lines() {
+        for line in hull.exterior().lines() {
             layout.elements.push(Element::GrLine(GrLine {
                 start: Xy {
                     x: line.start.x,

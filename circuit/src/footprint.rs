@@ -200,7 +200,7 @@ pub fn polygon_to_fp_poly(poly: &Polygon<f64>, layer: &Layer) -> FpPoly {
         layer: layer.clone(),
         pts: Pts {
             elements: poly
-                .exterior
+                .exterior()
                 .points_iter()
                 .map(|p| Xy {
                     x: p.x(),
