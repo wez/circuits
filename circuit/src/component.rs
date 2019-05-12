@@ -1,4 +1,5 @@
-use super::{Inst, Module, Pin};
+use super::{Inst, Pin};
+use kicad_parse_gen::footprint::Module;
 use std::sync::Arc;
 
 /// Defines a circuit component
