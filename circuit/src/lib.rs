@@ -12,32 +12,18 @@ use petgraph::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+mod net;
+mod pin;
+
 pub mod components;
 pub mod footprint;
-pub mod net;
-pub use net::Net;
 pub mod point;
+
+pub use net::Net;
+pub use pin::*;
 
 use crate::footprint::{AssignComponentNet, HasLocation, LayerManipulation, ToGeom};
 use crate::point::{Point, Rotation};
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum PinType {
-    Power,
-    Ground,
-    In,
-    Out,
-    InOut,
-    Unknown,
-}
-
-/// The definition of a connection point on a component
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
-pub struct Pin {
-    pub name: String,
-    pub pin_type: PinType,
-    pub description: Option<String>,
-}
 
 /// Defines a circuit component
 #[derive(Clone, Debug)]
