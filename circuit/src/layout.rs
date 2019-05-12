@@ -74,7 +74,7 @@ pub fn apply_seeed_drc(layout: &mut Layout) {
         };
     }
 
-    plot!(layerselection, 0x010f0_ffffffff);
+    plot!(layerselection, 0x10f0_ffff_ffff);
     plot!(usegerberextensions, true);
     plot!(usegerberattributes, false);
     plot!(usegerberadvancedattributes, false);
