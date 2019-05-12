@@ -21,8 +21,18 @@ mod tests {
     use super::*;
     use crate::loader::*;
 
+    fn setup_log() {
+        let mut builder = env_logger::Builder::from_default_env();
+        builder
+            .is_test(true)
+            .filter(None, log::LevelFilter::Info)
+            .try_init()
+            .ok();
+    }
+
     #[test]
     fn one_connection() {
+        setup_log();
         let mut circuit = CircuitBuilder::default();
         let mut sw = mx_switch().inst_with_name("SW1");
         let mut diode = diode().inst_with_name("D1");
@@ -42,6 +52,7 @@ mod tests {
 
     #[test]
     fn redundant_nets() {
+        setup_log();
         let mut circuit = CircuitBuilder::default();
         let mut sw = mx_switch().inst_with_name("SW1");
         let mut diode = diode().inst_with_name("D1");
