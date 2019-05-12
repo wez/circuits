@@ -5,10 +5,10 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
-clap = "~2.0"
+clap = "2.33"
 failure = "0.1"
 failure_derive = "0.1"
-geo = "~0.10"
+geo = "0.12"
 indicatif = "~0.9"
 itertools = "~0.7"
 maplit = "0.1.4"

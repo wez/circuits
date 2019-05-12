@@ -281,9 +281,9 @@ impl Shape {
             .collect();
         let hull = polys.convex_hull();
         let points = hull
-            .exterior
-            .into_iter()
-            .map(|p| Point::new(p.x, p.y))
+            .exterior()
+            .points_iter()
+            .map(|p| Point::new(p.x(), p.y()))
             .collect();
         Shape::polygon(points, origin(), None)
     }
