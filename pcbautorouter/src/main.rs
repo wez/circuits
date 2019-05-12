@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate error_chain;
 use std::process::exit;
 
 #[macro_use]

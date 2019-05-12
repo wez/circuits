@@ -6,7 +6,8 @@ edition = "2018"
 
 [dependencies]
 clap = "~2.0"
-error-chain = "~0.10"
+failure = "0.1"
+failure_derive = "0.1"
 geo = "~0.10"
 indicatif = "~0.9"
 itertools = "~0.7"

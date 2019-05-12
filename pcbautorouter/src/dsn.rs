@@ -2,6 +2,8 @@
 #![allow(unused_doc_comments)]
 
 use crate::geom::{origin, Location, Point, Shape, Vector};
+use failure::Fallible;
+use failure_derive::*;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::default::Default;
@@ -18,46 +20,30 @@ pub enum Value {
     TaggedList(String, Vec<Value>),
 }
 
-error_chain! {
-    foreign_links {
-        Io(::std::io::Error);
-    }
-    errors {
-        NoStringRep(value: Value) {
-            description("no string representation")
-            display("no string representation for {:?}", value)
-        }
-        NoIntRep
-        NoFloatRep
-        UnhandledShapeType(a: String) {
-            description("no parser for a shape type")
-            display("unhandled shape type {}", a)
-        }
-        UnexpectedTag(a: &'static str, value: Value) {
-            description("unexpected tag")
-            display("expected ({} ...) but got {:?}", a, value)
-        }
-        ExpectedTaggedList(value: Value) {
-            description("expected tagged list")
-            display("expected (tag ...) but got {:?}", value)
-        }
-        ExpectedTaggedValue(value: Value) {
-            description("expected tagged list with single value")
-            display("expected (tag value) but got {:?}", value)
-        }
-        UnexpectedValue(value: Value) {
-            description("unexpected value")
-            display("unexpected value {:?}", value)
-        }
-        Nom(e: String) {
-            description("parse error")
-            display("parse error {}", e)
-        }
-    }
+#[derive(Debug, Fail)]
+pub enum ErrorKind {
+    #[fail(display = "No string representation for {:?}", 0)]
+    NoStringRep(Value),
+    #[fail(display = "NoIntRep")]
+    NoIntRep,
+    #[fail(display = "NoFloatRep")]
+    NoFloatRep,
+    #[fail(display = "unhandled shape type {}", 0)]
+    UnhandledShapeType(String),
+    #[fail(display = "expected ({} ...) but got {:?}", a, value)]
+    UnexpectedTag { a: &'static str, value: Value },
+    #[fail(display = "expected (tag ...) but got {:?}", 0)]
+    ExpectedTaggedList(Value),
+    #[fail(display = "expected (tag value) but got {:?}", 0)]
+    ExpectedTaggedValue(Value),
+    #[fail(display = "unexpected value {:?}", 0)]
+    UnexpectedValue(Value),
+    #[fail(display = "parse error {}", 0)]
+    Nom(String),
 }
 
 impl Value {
-    pub fn as_string(&self) -> Result<&String> {
+    pub fn as_string(&self) -> Fallible<&String> {
         match self {
             &Value::Quoted(ref s) => Ok(s),
             &Value::Literal(ref s) => Ok(s),
@@ -65,14 +51,14 @@ impl Value {
         }
     }
 
-    pub fn as_i64(&self) -> Result<i64> {
+    pub fn as_i64(&self) -> Fallible<i64> {
         match self {
             &Value::Integer(ref s) => Ok(*s),
             _ => Err(ErrorKind::NoIntRep.into()),
         }
     }
 
-    pub fn as_f64(&self) -> Result<f64> {
+    pub fn as_f64(&self) -> Fallible<f64> {
         match self {
             &Value::Float(ref s) => Ok(*s),
             &Value::Integer(ref s) => Ok(*s as f64),
@@ -80,7 +66,7 @@ impl Value {
         }
     }
 
-    pub fn as_tagged_value(&self) -> Result<(&String, Value)> {
+    pub fn as_tagged_value(&self) -> Fallible<(&String, Value)> {
         match self {
             &Value::TaggedList(ref tag, ref list) => {
                 if list.len() != 1 {
@@ -93,23 +79,31 @@ impl Value {
         }
     }
 
-    pub fn as_tagged_list(&self) -> Result<(&String, Vec<Value>)> {
+    pub fn as_tagged_list(&self) -> Fallible<(&String, Vec<Value>)> {
         match self {
             &Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
             _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
         }
     }
 
-    pub fn as_tagged_list_with_name(&self, name: &'static str) -> Result<Vec<Value>> {
+    pub fn as_tagged_list_with_name(&self, name: &'static str) -> Fallible<Vec<Value>> {
         match self {
             &Value::TaggedList(ref tag, ref list) => {
                 if tag == name {
                     Ok(list.clone())
                 } else {
-                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
+                    Err(ErrorKind::UnexpectedTag {
+                        a: name,
+                        value: self.clone(),
+                    }
+                    .into())
                 }
             }
-            _ => Err(ErrorKind::UnexpectedTag(name, self.clone()).into()),
+            _ => Err(ErrorKind::UnexpectedTag {
+                a: name,
+                value: self.clone(),
+            }
+            .into()),
         }
     }
 }
@@ -169,7 +163,7 @@ named!(tagged_list_parser<&[u8], Value>, do_parse!(
     (Value::TaggedList(t.to_owned(), args))
 ));
 
-fn parse_value(bytes: &[u8]) -> Result<Value> {
+fn parse_value(bytes: &[u8]) -> Fallible<Value> {
     let res = tagged_list_parser(bytes);
     match res.clone() {
         nom::IResult::Done(_, output) => Ok(output),
@@ -278,7 +272,7 @@ pub struct Pcb {
 
 impl DsnShape {
     //! parses a tagged list into a shape instance
-    fn parse(tag: &String, list: &Vec<Value>, drill: bool) -> Result<DsnShape> {
+    fn parse(tag: &String, list: &Vec<Value>, drill: bool) -> Fallible<DsnShape> {
         match tag.as_ref() {
             "path" | "polygon" => DsnShape::parse_path(list, drill),
             "circle" => DsnShape::parse_circle(list),
@@ -287,7 +281,7 @@ impl DsnShape {
         }
     }
 
-    fn parse_circle(list: &Vec<Value>) -> Result<DsnShape> {
+    fn parse_circle(list: &Vec<Value>) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let diameter = list[1].as_f64()?;
@@ -305,7 +299,7 @@ impl DsnShape {
         })
     }
 
-    fn parse_path(list: &Vec<Value>, drill: bool) -> Result<DsnShape> {
+    fn parse_path(list: &Vec<Value>, drill: bool) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let mut points = Vec::new();
@@ -337,7 +331,7 @@ impl DsnShape {
         })
     }
 
-    fn parse_rect(list: &Vec<Value>) -> Result<DsnShape> {
+    fn parse_rect(list: &Vec<Value>) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
@@ -360,7 +354,7 @@ impl DsnShape {
 
 impl Parser {
     //! parses a value list into an existing Parser object
-    fn new(list: &Vec<Value>) -> Result<Parser> {
+    fn new(list: &Vec<Value>) -> Fallible<Parser> {
         let mut p = Parser::default();
 
         for ele in list.iter() {
@@ -390,7 +384,7 @@ impl Parser {
 
 impl Layer {
     //! parses a value list into a new Layer object
-    fn new(list: &Vec<Value>) -> Result<Layer> {
+    fn new(list: &Vec<Value>) -> Fallible<Layer> {
         let mut l = Layer::default();
 
         l.name = list[0].as_string()?.clone();
@@ -422,7 +416,7 @@ impl Layer {
 }
 
 impl Rule {
-    fn new(list: &Vec<Value>) -> Result<Rule> {
+    fn new(list: &Vec<Value>) -> Fallible<Rule> {
         let mut rule = Rule::default();
 
         for ele in list.iter() {
@@ -450,7 +444,7 @@ impl Rule {
 
 impl Structure {
     //! parses a value list and populates an existing Structure instance
-    fn new(list: &Vec<Value>) -> Result<Structure> {
+    fn new(list: &Vec<Value>) -> Fallible<Structure> {
         let mut s = Structure::default();
         for ele in list.iter() {
             let (k, list) = ele.as_tagged_list()?;
@@ -485,7 +479,7 @@ impl Pcb {
     //! parses the contents of filename into a Pcb object
     // the file is assumed to be a spectra dsn file, and was implemented
     // based on a dsn file produced by a recent kicad version.
-    pub fn parse(filename: &str) -> Result<Pcb> {
+    pub fn parse(filename: &str) -> Fallible<Pcb> {
         let mut f = File::open(filename)?;
         let mut buffer = String::new();
 
@@ -527,7 +521,7 @@ impl Pcb {
         Ok(pcb)
     }
 
-    fn network_list(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn network_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
         for ele in list.iter() {
             let (tagname, list) = ele.as_tagged_list()?;
             match tagname.as_ref() {
@@ -559,7 +553,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn component_list(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn component_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
         for ele in list.iter() {
             let list = ele.as_tagged_list_with_name("component")?;
             let component_type = list[0].as_string()?;
@@ -580,7 +574,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn padstack(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn padstack(&mut self, list: &Vec<Value>) -> Fallible<()> {
         let mut def = PadStack::default();
         def.pad_type = list[0].as_string()?.clone();
 
@@ -607,7 +601,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn image(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn image(&mut self, list: &Vec<Value>) -> Fallible<()> {
         let mut def = ComponentDef::default();
         def.component_type = list[0].as_string()?.clone();
 
@@ -635,7 +629,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn parse_pin(&self, list: &Vec<Value>) -> Result<Pin> {
+    fn parse_pin(&self, list: &Vec<Value>) -> Fallible<Pin> {
         if list.len() == 4 {
             Ok(Pin {
                 pad_type: list[0].as_string()?.clone(),
@@ -656,7 +650,7 @@ impl Pcb {
         }
     }
 
-    fn component_def_list(&mut self, list: &Vec<Value>) -> Result<()> {
+    fn component_def_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
         for image in list.iter() {
             let (tagname, list) = image.as_tagged_list()?;
             match tagname.as_ref() {
