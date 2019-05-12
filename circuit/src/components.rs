@@ -1,6 +1,6 @@
 use crate::{Component, Pin, PinType};
 use failure::{format_err, Fallible};
-use kicad_parse_gen::footprint::Module;
+use kicad_parse_gen::footprint::{self, Module};
 use kicad_parse_gen::symbol_lib::{self, Draw, PinType as KicadPinType, Symbol, SymbolLib};
 use kicad_parse_gen::{read_module, read_symbol_lib};
 use lazy_static::lazy_static;
@@ -13,6 +13,8 @@ use std::sync::{Arc, Mutex};
 
 lazy_static! {
     static ref CACHE: Mutex<Cache<Client>> = Mutex::new(init_cache().unwrap());
+    static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
+    static ref KICAD_INSTALLATION: PathBuf = find_kicad_install();
 }
 
 fn init_cache() -> Fallible<Cache<Client>> {
@@ -31,6 +33,59 @@ fn cache_get_as_string(url: Url) -> Fallible<String> {
     let mut s = String::new();
     file.read_to_string(&mut s)?;
     Ok(s)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FootprintLocator {
+    /// Resolve from the library shared on github via HTTP.
+    /// It is recommended that rev specify a commit hash rather
+    /// than a ref name (such as 'master') so that your code doesn't
+    /// get broken when the library is updated.
+    KiCadGitHub {
+        library: String,
+        name: String,
+        rev: String,
+    },
+    /// Resolve from the locally installed kicad library.
+    /// NOT RECOMMENDED because there is a lot of variance in the
+    /// version of the library installed.
+    LocallyInstalledKiCad { library: String, name: String },
+    /// Resolve from a local file.  This is suitable for eg:
+    /// libraries that you have bundled with your code.
+    LocalFile(PathBuf),
+}
+
+impl FootprintLocator {
+    pub fn github(library: &str, name: &str, rev: &str) -> Self {
+        FootprintLocator::KiCadGitHub {
+            library: library.to_owned(),
+            name: name.to_owned(),
+            rev: rev.to_owned(),
+        }
+    }
+
+    pub fn load(&self) -> Fallible<Module> {
+        match self {
+            FootprintLocator::KiCadGitHub { library, name, rev } => {
+                let url = format!(
+                    "https://raw.githubusercontent.com/KiCad/kicad-footprints/{}/{}.pretty/{}.kicad_mod",
+                    rev, library,name
+                );
+                let file_contents = cache_get_as_string(Url::parse(&url)?)?;
+                footprint::parse(&file_contents)
+                    .map_err(|e| format_err!("while parsing {} as a footprint: {}", url, e))
+            }
+            FootprintLocator::LocallyInstalledKiCad { library, name } => {
+                let mut abs_path = KICAD_INSTALLATION.join("modules");
+                abs_path.push(format!("{}.pretty", library));
+                abs_path.push(format!("{}.kicad_mod", name));
+                read_module(&abs_path).map_err(|e| format_err!("{}: {}", e, abs_path.display()))
+            }
+            FootprintLocator::LocalFile(path) => {
+                read_module(path).map_err(|e| format_err!("{}: {}", e, path.display()))
+            }
+        }
+    }
 }
 
 /// LibraryLocator specifies how to load a library.
@@ -95,13 +150,13 @@ impl LibraryLocator {
 struct IdKey {
     library: LibraryLocator,
     sym_name: String,
-    footprint_name: String,
+    footprint_name: FootprintLocator,
 }
 
 #[derive(Default)]
 struct SymbolLoader {
     sym_by_lib: HashMap<LibraryLocator, SymbolLib>,
-    mod_by_path: HashMap<String, Module>,
+    mod_by_path: HashMap<FootprintLocator, Module>,
     by_id: HashMap<IdKey, Arc<Component>>,
 }
 
@@ -133,29 +188,32 @@ impl SymbolLoader {
         None
     }
 
-    fn resolve_module(&mut self, footprint: &str) -> Option<Module> {
-        if let Some(module) = self.mod_by_path.get(footprint) {
+    fn resolve_module(&mut self, footprint: FootprintLocator) -> Option<Module> {
+        if let Some(module) = self.mod_by_path.get(&footprint) {
             return Some(module.clone());
         }
 
-        if let Err(err) = self.load_module(&footprint) {
-            eprintln!("failed to load footprint {}: {}", footprint, err);
-            return None;
-        }
+        match footprint.load() {
+            Err(err) => {
+                eprintln!("failed to load footprint {:?}: {}", footprint, err);
+                return None;
+            }
+            Ok(fp) => self.mod_by_path.insert(footprint.clone(), fp),
+        };
 
-        self.mod_by_path.get(footprint).cloned()
+        self.mod_by_path.get(&footprint).cloned()
     }
 
     fn resolve_component(
         &mut self,
         library: LibraryLocator,
         name: &str,
-        footprint: &str,
+        footprint: FootprintLocator,
     ) -> Option<Arc<Component>> {
         let key = IdKey {
             library: library.clone(),
             sym_name: name.to_owned(),
-            footprint_name: footprint.to_owned(),
+            footprint_name: footprint.clone(),
         };
         if let Some(comp) = self.by_id.get(&key) {
             return Some(Arc::clone(comp));
@@ -169,22 +227,6 @@ impl SymbolLoader {
 
         self.by_id.insert(key, Arc::clone(&comp));
         Some(comp)
-    }
-
-    fn load_module(&mut self, footprint: &str) -> Fallible<()> {
-        let path = PathBuf::from(footprint);
-        let module = if path.is_absolute() {
-            read_module(&path)?
-        } else {
-            let elements: Vec<&str> = footprint.splitn(2, ':').collect();
-            let mut abs_path = KICAD_INSTALLATION.join("modules");
-            abs_path.push(format!("{}.pretty", elements[0]));
-            abs_path.push(format!("{}.kicad_mod", elements[1]));
-            read_module(&abs_path).map_err(|e| format_err!("{}: {}", e, abs_path.display()))?
-        };
-
-        self.mod_by_path.insert(footprint.to_string(), module);
-        Ok(())
     }
 }
 
@@ -231,15 +273,10 @@ pub fn find_kicad_install() -> PathBuf {
     panic!("cannot find your kicad installation");
 }
 
-lazy_static! {
-    static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
-    static ref KICAD_INSTALLATION: PathBuf = find_kicad_install();
-}
-
-pub fn load_from_kicad(
+pub fn load(
     library: LibraryLocator,
     symbol: &str,
-    footprint: &str,
+    footprint: FootprintLocator,
 ) -> Option<Arc<Component>> {
     LOADER
         .lock()
@@ -248,19 +285,27 @@ pub fn load_from_kicad(
 }
 
 pub fn diode() -> Arc<Component> {
-    load_from_kicad(
+    load(
         LibraryLocator::github("pspice", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "DIODE",
-        "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
+        FootprintLocator::github(
+            "Diode_THT",
+            "D_DO-35_SOD27_P7.62mm_Horizontal",
+            "ecdc99213888760c52c578f3d4ccf88652ddf2c8",
+        ),
     )
     .unwrap()
 }
 
 pub fn mx_switch() -> Arc<Component> {
-    load_from_kicad(
+    load(
         LibraryLocator::github("Switch", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "SW_Push",
-        "Button_Switch_Keyboard:SW_Cherry_MX_1.00u_PCB",
+        FootprintLocator::github(
+            "Button_Switch_Keyboard",
+            "SW_Cherry_MX_1.00u_PCB",
+            "ecdc99213888760c52c578f3d4ccf88652ddf2c8",
+        ),
     )
     .unwrap()
 }
