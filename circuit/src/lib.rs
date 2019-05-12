@@ -5,9 +5,9 @@ mod instance;
 mod net;
 mod pin;
 
-pub mod components;
 pub mod footprint;
 pub mod layout;
+pub mod loader;
 pub mod point;
 
 pub use crate::circuit::*;
@@ -19,7 +19,7 @@ pub use pin::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::*;
+    use crate::loader::*;
 
     #[test]
     fn one_connection() {
