@@ -2,28 +2,18 @@ use super::{Inst, Pin};
 use kicad_parse_gen::footprint::Module;
 use std::sync::Arc;
 
-/// Defines a circuit component
-#[derive(Clone, Debug)]
-pub struct Component {
-    pub name: String,
-    pub description: Option<String>,
-    pub pins: Vec<Pin>,
-    pub footprint: Module,
+#[derive(Debug)]
+struct Inner {
+    name: String,
+    description: Option<String>,
+    pins: Vec<Pin>,
+    footprint: Module,
 }
 
-impl Component {
-    pub fn pin_idx_by_name(&self, name: &str) -> Option<usize> {
-        for (idx, pin) in self.pins.iter().enumerate() {
-            if pin.name == name {
-                return Some(idx);
-            }
-        }
-        None
-    }
-}
+impl Eq for Inner {}
 
-impl PartialEq for Component {
-    fn eq(&self, other: &Component) -> bool {
+impl PartialEq for Inner {
+    fn eq(&self, other: &Inner) -> bool {
         self.name == other.name
             && self.description == other.description
             && self.pins == other.pins
@@ -31,21 +21,54 @@ impl PartialEq for Component {
     }
 }
 
-impl Eq for Component {}
-
-/// This trait allows defining convenience methods on Arc<Component> that
-/// would otherwise logically be methods on the Component struct itself.
-pub trait MakeInst {
-    fn inst_with_name<S: Into<String>>(&self, name: S) -> Inst;
-    fn inst_with_name_and_value<S: Into<String>>(&self, name: S, value: String) -> Inst;
+/// Defines a circuit component
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Component {
+    inner: Arc<Inner>,
 }
 
-impl MakeInst for Arc<Component> {
-    fn inst_with_name<S: Into<String>>(&self, name: S) -> Inst {
-        Inst::new(name, None, Arc::clone(self))
+impl Component {
+    pub fn new(name: &str, description: Option<String>, pins: Vec<Pin>, footprint: Module) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                name: name.to_owned(),
+                description,
+                pins,
+                footprint,
+            }),
+        }
     }
 
-    fn inst_with_name_and_value<S: Into<String>>(&self, name: S, value: String) -> Inst {
-        Inst::new(name, Some(value), Arc::clone(self))
+    pub fn pin_idx_by_name(&self, name: &str) -> Option<usize> {
+        for (idx, pin) in self.pins().iter().enumerate() {
+            if pin.name == name {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    pub fn pins(&self) -> &[Pin] {
+        &self.inner.pins
+    }
+
+    pub fn footprint(&self) -> &Module {
+        &self.inner.footprint
+    }
+
+    pub fn name(&self) -> &str {
+        self.inner.name.as_str()
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.inner.description.as_ref().map(String::as_str)
+    }
+
+    pub fn inst_with_name<S: Into<String>>(&self, name: S) -> Inst {
+        Inst::new(name, None, self.clone())
+    }
+
+    pub fn inst_with_name_and_value<S: Into<String>>(&self, name: S, value: String) -> Inst {
+        Inst::new(name, Some(value), self.clone())
     }
 }

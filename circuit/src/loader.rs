@@ -9,7 +9,7 @@ use static_http_cache::Cache;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 lazy_static! {
     static ref CACHE: Mutex<Cache<Client>> = Mutex::new(init_cache().unwrap());
@@ -156,7 +156,7 @@ struct IdKey {
 struct SymbolLoader {
     sym_by_lib: HashMap<LibraryLocator, SymbolLib>,
     mod_by_path: HashMap<FootprintLocator, Module>,
-    by_id: HashMap<IdKey, Arc<Component>>,
+    by_id: HashMap<IdKey, Component>,
 }
 
 fn symbol_matches_name(sym: &Symbol, name: &str) -> bool {
@@ -208,23 +208,23 @@ impl SymbolLoader {
         library: LibraryLocator,
         name: &str,
         footprint: FootprintLocator,
-    ) -> Option<Arc<Component>> {
+    ) -> Option<Component> {
         let key = IdKey {
             library: library.clone(),
             sym_name: name.to_owned(),
             footprint_name: footprint.clone(),
         };
         if let Some(comp) = self.by_id.get(&key) {
-            return Some(Arc::clone(comp));
+            return Some(comp.clone());
         }
 
         let module = self.resolve_module(footprint)?;
 
         let sym = self.resolve_symbol(library, name)?;
 
-        let comp = Arc::new(convert_to_component(&sym, module));
+        let comp = convert_to_component(&sym, module);
 
-        self.by_id.insert(key, Arc::clone(&comp));
+        self.by_id.insert(key, comp.clone());
         Some(comp)
     }
 }
@@ -249,12 +249,7 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
         })
         .collect();
 
-    Component {
-        name: symbol.name.clone(),
-        description: None,
-        pins,
-        footprint: module,
-    }
+    Component::new(&symbol.name, None, pins, module)
 }
 
 /// Locate the shared kicad data files on the local system
@@ -278,14 +273,14 @@ pub fn load(
     library: LibraryLocator,
     symbol: &str,
     footprint: FootprintLocator,
-) -> Option<Arc<Component>> {
+) -> Option<Component> {
     LOADER
         .lock()
         .unwrap()
         .resolve_component(library, symbol, footprint)
 }
 
-pub fn diode() -> Arc<Component> {
+pub fn diode() -> Component {
     load(
         LibraryLocator::github("pspice", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "DIODE",
@@ -298,7 +293,7 @@ pub fn diode() -> Arc<Component> {
     .unwrap()
 }
 
-pub fn mx_switch() -> Arc<Component> {
+pub fn mx_switch() -> Component {
     load(
         LibraryLocator::github("Switch", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "SW_Push",

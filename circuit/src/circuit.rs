@@ -67,7 +67,7 @@ impl Circuit {
                 };
 
                 footprint.set_net(
-                    &inst.component.pins[ass.pin_index].name,
+                    &inst.component.pins()[ass.pin_index].name,
                     ass.pin_index,
                     &net,
                 );

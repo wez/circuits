@@ -6,7 +6,6 @@ use geo::Polygon;
 use kicad_parse_gen::footprint::Module;
 use petgraph::prelude::*;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct PinAssignment {
@@ -45,7 +44,7 @@ pub struct Inst {
     /// Value of the component, eg: 220
     pub value: Option<String>,
     /// the component definition
-    pub component: Arc<Component>,
+    pub component: Component,
     /// Whether the footprint is placed on the opposite side of the board
     pub flipped: bool,
     /// The location of the centroid of the footprint
@@ -57,7 +56,7 @@ pub struct Inst {
 }
 
 impl Inst {
-    pub fn new<S: Into<String>>(name: S, value: Option<String>, component: Arc<Component>) -> Self {
+    pub fn new<S: Into<String>>(name: S, value: Option<String>, component: Component) -> Self {
         Self {
             name: name.into(),
             value,
@@ -97,7 +96,7 @@ impl Inst {
     /// performed.  It is intended to be used to compute size and
     /// bounds only.
     pub fn make_footprint(&self) -> Module {
-        let mut footprint = self.component.footprint.clone();
+        let mut footprint = self.component.footprint().clone();
         footprint.set_location(self.coordinates, self.rotation);
         if self.flipped {
             footprint.flip_layer();
