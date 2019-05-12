@@ -1,5 +1,5 @@
 use crate::{Component, Pin, PinType};
-use kicad_parse_gen::error::KicadError;
+use failure::{format_err, Fallible};
 use kicad_parse_gen::footprint::Module;
 use kicad_parse_gen::symbol_lib::{Draw, PinType as KicadPinType, Symbol, SymbolLib};
 use kicad_parse_gen::{read_module, read_symbol_lib};
@@ -74,23 +74,26 @@ impl SymbolLoader {
         Some(comp)
     }
 
-    fn load_library(&mut self, library: &str) -> Result<(), KicadError> {
-        let path = format!("/usr/share/kicad/library/{}.lib", library);
-        self.sym_by_lib
-            .insert(library.into(), read_symbol_lib(Path::new(&path))?);
+    fn load_library(&mut self, library: &str) -> Fallible<()> {
+        let path = KICAD_INSTALLATION.join(format!("library/{}.lib", library));
+        self.sym_by_lib.insert(
+            library.into(),
+            read_symbol_lib(Path::new(&path))
+                .map_err(|e| format_err!("{}: {}", e, path.display()))?,
+        );
         Ok(())
     }
 
-    fn load_module(&mut self, footprint: &str) -> Result<(), KicadError> {
+    fn load_module(&mut self, footprint: &str) -> Fallible<()> {
         let path = PathBuf::from(footprint);
         let module = if path.is_absolute() {
             read_module(&path)?
         } else {
             let elements: Vec<&str> = footprint.splitn(2, ':').collect();
-            let mut abs_path = PathBuf::from("/usr/share/kicad/modules");
+            let mut abs_path = KICAD_INSTALLATION.join("modules");
             abs_path.push(format!("{}.pretty", elements[0]));
             abs_path.push(format!("{}.kicad_mod", elements[1]));
-            read_module(&abs_path)?
+            read_module(&abs_path).map_err(|e| format_err!("{}: {}", e, abs_path.display()))?
         };
 
         self.mod_by_path.insert(footprint.to_string(), module);
@@ -126,8 +129,24 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
     }
 }
 
+pub fn find_kicad_install() -> PathBuf {
+    let candidates = [
+        "/Library/Application Support/kicad",
+        "/usr/local/share/kicad",
+        "/usr/share/kicad",
+    ];
+    for candidate in &candidates {
+        let candidate = Path::new(candidate);
+        if candidate.is_dir() {
+            return candidate.to_path_buf();
+        }
+    }
+    panic!("cannot find your kicad installation");
+}
+
 lazy_static! {
     static ref LOADER: Mutex<SymbolLoader> = Mutex::new(SymbolLoader::default());
+    static ref KICAD_INSTALLATION: PathBuf = find_kicad_install();
 }
 
 pub fn load_from_kicad(library: &str, symbol: &str, footprint: &str) -> Option<Arc<Component>> {
@@ -150,7 +169,7 @@ pub fn mx_switch() -> Arc<Component> {
     load_from_kicad(
         "Switch",
         "SW_Push",
-        "Button_Switch_Keyboard:SW_Cherry_MX1A_1.00u_PCB",
+        "Button_Switch_Keyboard:SW_Cherry_MX_1.00u_PCB",
     )
     .unwrap()
 }
