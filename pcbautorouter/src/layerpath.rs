@@ -1,19 +1,19 @@
 // Find a path for a set of terminals on a single layer
 use super::layerassign::InterferenceHandler;
-use dijkstra::shortest_path;
-use features::Terminal;
-use geom::{OrderedPoint, Shape};
+use crate::dijkstra::shortest_path;
+use crate::features::Terminal;
+use crate::geom::{OrderedPoint, Shape};
+use crate::progress::Progress;
+use nalgebra as na;
 use ncollide2d::bounding_volume::AABB;
 use ncollide2d::broad_phase::BroadPhase;
 use ncollide2d::broad_phase::DBVTBroadPhase;
 use petgraph::graphmap::UnGraphMap;
-use progress::Progress;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, HashSet};
 use std::f64::INFINITY;
 use std::rc::Rc;
 use std::sync::Arc;
-extern crate nalgebra as na;
 
 type Path = (OrderedPoint, OrderedPoint);
 type PadBroadPhase = DBVTBroadPhase<f64, AABB<f64>, usize>;

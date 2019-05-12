@@ -3,8 +3,8 @@
 // and was made available under the Boost Software License v1
 // http://www.boost.org/LICENSE_1_0.txt.
 
-extern crate nalgebra as na;
 use itertools::Itertools;
+use nalgebra as na;
 
 type Point = na::Point2<f64>;
 

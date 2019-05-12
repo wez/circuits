@@ -2,6 +2,7 @@
 authors = ["Wez Furlong"]
 name = "circuit"
 version = "0.1.0"
+edition = "2018"
 
 [dependencies]
 geo = "~0.10"

@@ -1,22 +1,11 @@
 #[macro_use]
 extern crate error_chain;
-#[macro_use]
-extern crate maplit;
 use std::process::exit;
 
 #[macro_use]
 extern crate nom;
 
-extern crate clap;
-extern crate geo;
-extern crate indicatif;
-extern crate itertools;
-extern crate nalgebra as na;
-extern crate ncollide2d;
-extern crate ordered_float;
-extern crate petgraph;
-extern crate piston_window;
-extern crate spade;
+use nalgebra as na;
 
 mod dijkstra;
 mod dsn;
@@ -33,8 +22,8 @@ mod twonets;
 mod polyoffset;
 
 mod progress;
-use polyoffset::JoinType;
-use progress::Progress;
+use crate::polyoffset::JoinType;
+use crate::progress::Progress;
 
 use self::dsn::Pcb;
 use clap::{App, Arg};
@@ -44,10 +33,10 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 
-use features::Terminal;
-use geom::OrderedPoint;
-use gui::run_gui;
-use layerpath::{CDTGraph, PathConfiguration};
+use crate::features::Terminal;
+use crate::geom::OrderedPoint;
+use crate::gui::run_gui;
+use crate::layerpath::{CDTGraph, PathConfiguration};
 
 pub enum ProgressUpdate {
     Feature(features::Features),

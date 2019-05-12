@@ -1,12 +1,12 @@
-extern crate nalgebra as na;
-extern crate ncollide2d;
-use dijkstra::shortest_path;
-use features::{LayerSet, Terminal};
-use geom::{OrderedPoint, Point, Shape};
+use crate::dijkstra::shortest_path;
+use crate::features::{LayerSet, Terminal};
+use crate::geom::{OrderedPoint, Point, Shape};
+use crate::progress::Progress;
+use maplit::hashset;
+use nalgebra as na;
 use ncollide2d::broad_phase::{BroadPhase, BroadPhaseInterferenceHandler, DBVTBroadPhase};
 use ordered_float::OrderedFloat;
 use petgraph::graphmap::DiGraphMap;
-use progress::Progress;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;

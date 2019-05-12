@@ -1,5 +1,5 @@
-use features::{LayerSet, Terminal};
-use geom;
+use crate::features::{LayerSet, Terminal};
+use crate::geom;
 use itertools::Itertools;
 use ncollide2d::query::Proximity::Disjoint;
 use petgraph::algo::min_spanning_tree;

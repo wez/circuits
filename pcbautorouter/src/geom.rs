@@ -1,15 +1,14 @@
-extern crate nalgebra as na;
-extern crate ncollide2d;
+use crate::polyoffset::{buffer, JoinType};
 use geo;
 use geo::convexhull::ConvexHull;
 use geo::simplify::Simplify;
+use nalgebra as na;
 use ncollide2d::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
 use ncollide2d::query::Proximity::Intersecting;
 use ncollide2d::query::{contact, proximity, Contact, Proximity};
 use ncollide2d::transformation::ToPolyline;
 use ordered_float::OrderedFloat;
 use petgraph::graphmap::UnGraphMap;
-use polyoffset::{buffer, JoinType};
 use spade::HasPosition;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Error, Formatter};

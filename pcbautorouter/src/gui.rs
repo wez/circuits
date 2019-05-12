@@ -3,11 +3,11 @@ use piston_window::{line, Event, Graphics, PistonWindow};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use dsn::Pcb;
-use features::Features;
-use geom::{origin, Polyline, Shape, Similarity, Vector};
+use crate::dsn::Pcb;
+use crate::features::Features;
+use crate::geom::{origin, Polyline, Shape, Similarity, Vector};
+use crate::ProgressUpdate;
 use ncollide2d::bounding_volume::BoundingVolume;
-use ProgressUpdate;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];

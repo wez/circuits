@@ -1,14 +1,13 @@
 // https://github.com/steveklabnik/rustdoc/issues/96
 #![allow(unused_doc_comments)]
 
+use crate::geom::{origin, Location, Point, Shape, Vector};
+use itertools::Itertools;
+use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fs::File;
 use std::io::prelude::*;
 use std::str;
-extern crate nom;
-use geom::{origin, Location, Point, Shape, Vector};
-use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub enum Value {

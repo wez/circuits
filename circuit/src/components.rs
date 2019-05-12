@@ -1,12 +1,12 @@
+use crate::{Component, Pin, PinType};
 use kicad_parse_gen::error::KicadError;
 use kicad_parse_gen::footprint::Module;
 use kicad_parse_gen::symbol_lib::{Draw, PinType as KicadPinType, Symbol, SymbolLib};
 use kicad_parse_gen::{read_module, read_symbol_lib};
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-
-use {Component, Pin, PinType};
 
 #[derive(Default)]
 struct SymbolLoader {

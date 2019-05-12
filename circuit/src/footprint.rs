@@ -8,7 +8,7 @@ use kicad_parse_gen::footprint::{
     XyType,
 };
 
-use point::{Point, Rotation};
+use crate::point::{Point, Rotation};
 
 pub trait HasLocation {
     fn get_location(&self) -> (Point, Rotation);

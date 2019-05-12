@@ -1,10 +1,3 @@
-extern crate geo;
-extern crate kicad_parse_gen;
-extern crate ordered_float;
-extern crate petgraph;
-#[macro_use]
-extern crate lazy_static;
-
 use geo::prelude::*;
 use geo::{Geometry, GeometryCollection, MultiPolygon, Polygon, Rect};
 use kicad_parse_gen::footprint::{
@@ -25,8 +18,8 @@ pub mod components;
 pub mod footprint;
 pub mod point;
 
-use footprint::{AssignComponentNet, HasLocation, LayerManipulation, ToGeom};
-use point::{Point, Rotation};
+use crate::footprint::{AssignComponentNet, HasLocation, LayerManipulation, ToGeom};
+use crate::point::{Point, Rotation};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum PinType {
@@ -849,7 +842,7 @@ fn compute_hull(layout: &Layout) -> Polygon<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use components::*;
+    use crate::components::*;
 
     #[test]
     fn one_connection() {
