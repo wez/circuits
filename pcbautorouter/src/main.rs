@@ -12,7 +12,7 @@ extern crate geo;
 extern crate indicatif;
 extern crate itertools;
 extern crate nalgebra as na;
-extern crate ncollide;
+extern crate ncollide2d;
 extern crate ordered_float;
 extern crate petgraph;
 extern crate piston_window;
@@ -33,21 +33,21 @@ mod twonets;
 mod polyoffset;
 
 mod progress;
-use progress::Progress;
 use polyoffset::JoinType;
+use progress::Progress;
 
-use std::sync::mpsc;
-use std::thread;
+use self::dsn::Pcb;
 use clap::{App, Arg};
 use std::error::Error;
-use self::dsn::Pcb;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::sync::Arc;
+use std::thread;
 
 use features::Terminal;
-use layerpath::{CDTGraph, PathConfiguration};
 use geom::OrderedPoint;
 use gui::run_gui;
+use layerpath::{CDTGraph, PathConfiguration};
 
 pub enum ProgressUpdate {
     Feature(features::Features),
@@ -66,7 +66,7 @@ impl Notify {
     }
 }
 
-use spade::delaunay::{ConstrainedDelaunayTriangulation, EdgeHandle,CdtEdge};
+use spade::delaunay::{CdtEdge, ConstrainedDelaunayTriangulation, EdgeHandle};
 use spade::kernels::FloatKernel;
 type CDT = ConstrainedDelaunayTriangulation<OrderedPoint, FloatKernel>;
 
@@ -127,7 +127,6 @@ where
         }
     }
 }
-
 
 /// This is where we initiate the heavy lifting.
 /// We do this separately from the UI thread so that we can incrementally
@@ -225,7 +224,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
         }
 
         {
-            let edge_cost = |edge: &EdgeHandle<OrderedPoint,CdtEdge>| {
+            let edge_cost = |edge: &EdgeHandle<OrderedPoint, CdtEdge>| {
                 let from = &*edge.from();
                 let to = &*edge.to();
                 let a = from.point();
@@ -242,7 +241,6 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
         }
         notifier.send(ProgressUpdate::Feature(features.clone()));
     }
-
 
     let cdt_graph = Rc::new(cdt_graph);
     let paths_by_layer = features.paths_by_layer.clone();

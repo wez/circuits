@@ -1,13 +1,13 @@
 use piston_window::types::{Color, Matrix2d};
 use piston_window::{line, Event, Graphics, PistonWindow};
-use std::time::Duration;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use dsn::Pcb;
-use ProgressUpdate;
 use features::Features;
 use geom::{origin, Polyline, Shape, Similarity, Vector};
-use ncollide::bounding_volume::BoundingVolume;
+use ncollide2d::bounding_volume::BoundingVolume;
+use ProgressUpdate;
 
 #[allow(dead_code)]
 const DARK_CHARCOAL: Color = [46.0 / 255.0, 52.0 / 255.0, 54.0 / 255.0, 1.0];
@@ -68,7 +68,7 @@ where
         .as_shape::<Polyline>()
         .expect("transform always yields a polygon!?");
 
-    let points = poly.vertices();
+    let points = poly.points();
 
     for i in 0..points.len() - 1 {
         let a = &points[i];
@@ -102,7 +102,8 @@ fn draw_gui(
         // pixel padding in the window, so that there is a gap between
         // the window border and the pcb boundary
         let padding = 10f64;
-        let t = c.transform
+        let t = c
+            .transform
             .flip_v()
             .trans(padding / 2.0, -(size.height as f64) + padding / 2.0);
 
@@ -136,8 +137,8 @@ fn draw_gui(
             if p_width * factor > size.width as f64 {
                 factor = (size.width as f64 - padding) / p_width;
             }
-            let scale = Similarity::new(Vector::new(0.0, 0.0), 0.0, factor) *
-                Similarity::new(Vector::new(x_offset, y_offset), 0.0, 1.0);
+            let scale = Similarity::new(Vector::new(0.0, 0.0), 0.0, factor)
+                * Similarity::new(Vector::new(x_offset, y_offset), 0.0, 1.0);
 
             // boundary in light blue
             for shape in pcb.structure.boundary.iter() {

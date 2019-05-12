@@ -1,10 +1,10 @@
 use dsn;
 use geom::{OrderedPoint, Point, Shape};
-use std::collections::{HashMap, HashSet};
-use twonets;
-use std::sync::Arc;
-use std::hash::{Hash, Hasher};
 use ordered_float::OrderedFloat;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+use twonets;
 
 pub type LayerSet = HashSet<u8>;
 
@@ -45,9 +45,10 @@ impl PartialEq for Terminal {
     // the shapehandle does not define equality methods we can use.  We are
     // relying on the terminals not having the same point coordinates.
     fn eq(&self, other: &Terminal) -> bool {
-        self.identifier == other.identifier && self.net_name == other.net_name &&
-            self.layers == other.layers &&
-            OrderedFloat(self.point.coords.x) == OrderedFloat(self.point.coords.y)
+        self.identifier == other.identifier
+            && self.net_name == other.net_name
+            && self.layers == other.layers
+            && OrderedFloat(self.point.coords.x) == OrderedFloat(self.point.coords.y)
     }
 }
 
@@ -70,7 +71,6 @@ impl Terminal {
         self.layers = self.layers.union(&other.layers).cloned().collect();
     }
 }
-
 
 fn check_layer_contig(layers: &LayerSet) {
     let mut layer_vec = Vec::with_capacity(layers.len());

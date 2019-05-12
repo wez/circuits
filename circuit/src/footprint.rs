@@ -4,8 +4,8 @@
 use geo::prelude::*;
 use geo::{Coordinate, Geometry, GeometryCollection, Line, LineString, Point as GeoPoint, Polygon};
 use kicad_parse_gen::footprint::{
-    At, Element, Flip, FpLine, FpPoly, Layer, Module, Net as KicadNet, Pad,
-    PadShape, Pts, Xy, XyType,
+    At, Element, Flip, FpLine, FpPoly, Layer, Module, Net as KicadNet, Pad, PadShape, Pts, Xy,
+    XyType,
 };
 
 use point::{Point, Rotation};
@@ -45,11 +45,13 @@ impl ToGeom for Module {
                     Element::Pad(pad) => Some(pad.to_geom()),
                     _ => None,
                 }
-            }).map(|geom| {
+            })
+            .map(|geom| {
                 geom.translate(*point.x(), *point.y())
                     //.rotate_around_point(**rotation, GeoPoint::new(0.0, 0.0))
-                    .rotate_around_point(360.0-**rotation, GeoPoint::new(*point.x(), *point.y()))
-            }).collect();
+                    .rotate_around_point(360.0 - **rotation, GeoPoint::new(*point.x(), *point.y()))
+            })
+            .collect();
         Geometry::GeometryCollection(collection)
     }
 }
@@ -204,7 +206,8 @@ pub fn polygon_to_fp_poly(poly: &Polygon<f64>, layer: &Layer) -> FpPoly {
                     x: p.x(),
                     y: p.y(),
                     t: XyType::Xy,
-                }).collect(),
+                })
+                .collect(),
         },
     }
 }

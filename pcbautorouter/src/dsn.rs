@@ -1,9 +1,9 @@
 // https://github.com/steveklabnik/rustdoc/issues/96
 #![allow(unused_doc_comments)]
 
+use std::default::Default;
 use std::fs::File;
 use std::io::prelude::*;
-use std::default::Default;
 use std::str;
 extern crate nom;
 use geom::{origin, Location, Point, Shape, Vector};
@@ -19,7 +19,7 @@ pub enum Value {
     TaggedList(String, Vec<Value>),
 }
 
-error_chain!{
+error_chain! {
     foreign_links {
         Io(::std::io::Error);
     }
@@ -83,11 +83,13 @@ impl Value {
 
     pub fn as_tagged_value(&self) -> Result<(&String, Value)> {
         match self {
-            &Value::TaggedList(ref tag, ref list) => if list.len() != 1 {
-                Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
-            } else {
-                Ok((tag, list[0].clone()))
-            },
+            &Value::TaggedList(ref tag, ref list) => {
+                if list.len() != 1 {
+                    Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
+                } else {
+                    Ok((tag, list[0].clone()))
+                }
+            }
             _ => Err(ErrorKind::ExpectedTaggedValue(self.clone()).into()),
         }
     }
@@ -101,16 +103,17 @@ impl Value {
 
     pub fn as_tagged_list_with_name(&self, name: &'static str) -> Result<Vec<Value>> {
         match self {
-            &Value::TaggedList(ref tag, ref list) => if tag == name {
-                Ok(list.clone())
-            } else {
-                Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
-            },
+            &Value::TaggedList(ref tag, ref list) => {
+                if tag == name {
+                    Ok(list.clone())
+                } else {
+                    Err(ErrorKind::UnexpectedTag(name, self.clone()).into())
+                }
+            }
             _ => Err(ErrorKind::UnexpectedTag(name, self.clone()).into()),
         }
     }
 }
-
 
 named!(string_quote_parser<&[u8], Value>, do_parse!(
     tag!("(string_quote \")") >>
@@ -171,15 +174,13 @@ fn parse_value(bytes: &[u8]) -> Result<Value> {
     let res = tagged_list_parser(bytes);
     match res.clone() {
         nom::IResult::Done(_, output) => Ok(output),
-        nom::IResult::Incomplete(needed) => Err(
-            ErrorKind::Nom(format!("need {:?} more bytes", needed)).into(),
-        ),
+        nom::IResult::Incomplete(needed) => {
+            Err(ErrorKind::Nom(format!("need {:?} more bytes", needed)).into())
+        }
         nom::IResult::Error(_) => {
             use nom::{prepare_errors, print_offsets};
             if let Some(v) = prepare_errors(bytes, res) {
-                Err(
-                    ErrorKind::Nom(format!("\n{}", print_offsets(bytes, 0, &v))).into(),
-                )
+                Err(ErrorKind::Nom(format!("\n{}", print_offsets(bytes, 0, &v))).into())
             } else {
                 Err(ErrorKind::Nom(format!("sadness")).into())
             }
@@ -192,7 +193,6 @@ pub struct DsnShape {
     pub layer: String,
     pub shape: Shape,
 }
-
 
 #[derive(Default, Debug, Clone)]
 pub struct Parser {
@@ -223,7 +223,6 @@ pub struct Structure {
     pub via: String,
     pub rule: Rule,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Component {
@@ -341,7 +340,6 @@ impl DsnShape {
 
     fn parse_rect(list: &Vec<Value>) -> Result<DsnShape> {
         let layer = list[0].as_string()?;
-
 
         let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
         let (top_right_x, top_right_y) = (list[3].as_f64()?, list[4].as_f64()?);
@@ -483,7 +481,6 @@ impl Structure {
         Ok(s)
     }
 }
-
 
 impl Pcb {
     //! parses the contents of filename into a Pcb object

@@ -1,16 +1,15 @@
-use petgraph::graphmap::DiGraphMap;
+extern crate nalgebra as na;
+extern crate ncollide2d;
+use dijkstra::shortest_path;
 use features::{LayerSet, Terminal};
 use geom::{OrderedPoint, Point, Shape};
-use std::collections::{HashMap, HashSet};
-use ncollide::broad_phase::BroadPhase;
-use ncollide::broad_phase::DBVTBroadPhase;
-extern crate nalgebra as na;
-extern crate ncollide;
-use std::sync::Arc;
-use dijkstra::shortest_path;
+use ncollide2d::broad_phase::{BroadPhase, BroadPhaseInterferenceHandler, DBVTBroadPhase};
 use ordered_float::OrderedFloat;
-use std::rc::Rc;
+use petgraph::graphmap::DiGraphMap;
 use progress::Progress;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
 
 pub type TerminalId = usize;
 const NUM_VIAS: usize = 5;
@@ -97,8 +96,7 @@ pub struct ComponentPath {
     pub b: Arc<Terminal>,
 }
 
-
-pub type ComponentBroadPhase = DBVTBroadPhase<Point, ncollide::bounding_volume::AABB<Point>, usize>;
+pub type ComponentBroadPhase = DBVTBroadPhase<f64, ncollide2d::bounding_volume::AABB<f64>, usize>;
 
 pub type ComponentIndex = usize;
 pub struct ComponentList {
@@ -119,24 +117,30 @@ impl ::std::fmt::Debug for ComponentList {
     }
 }
 
+pub struct InterferenceHandler {}
+impl BroadPhaseInterferenceHandler<usize> for InterferenceHandler {
+    fn is_interference_allowed(&mut self, data1: &usize, data2: &usize) -> bool {
+        data1 != data2
+    }
+    fn interference_started(&mut self, _data1: &usize, _data2: &usize) {}
+    fn interference_stopped(&mut self, _data1: &usize, _data2: &usize) {}
+}
+
 impl Clone for ComponentList {
     fn clone(&self) -> ComponentList {
         let mut list = ComponentList {
             terminal_to_component: self.terminal_to_component.clone(),
             components: self.components.clone(),
-            broad_phase: ComponentBroadPhase::new(1.0, false),
+            broad_phase: ComponentBroadPhase::new(1.0),
             paths: self.paths.clone(),
         };
 
         // Rebuild the broad phase
-        for phase_id in 0..list.paths.len() {
-            let path = &list.paths[phase_id];
-            list.broad_phase
-                .deferred_add(phase_id, path.line.aabb(), phase_id);
+        for (phase_id, path) in list.paths.iter().enumerate() {
+            list.broad_phase.create_proxy(path.line.aabb(), phase_id);
         }
 
-        list.broad_phase
-            .update(&mut |a, b| a != b, &mut |_, _, _| {});
+        list.broad_phase.update(&mut InterferenceHandler {});
 
         list
     }
@@ -147,7 +151,7 @@ impl ComponentList {
         ComponentList {
             terminal_to_component: HashMap::new(),
             components: Vec::new(),
-            broad_phase: ComponentBroadPhase::new(1.0, false),
+            broad_phase: ComponentBroadPhase::new(1.0),
             paths: Vec::new(),
         }
     }
@@ -157,13 +161,11 @@ impl ComponentList {
         edge: &PathEdge,
         clearance: f64,
     ) -> Option<
-        Vec<
-            (
-                Arc<Terminal>,
-                Arc<Terminal>,
-                ncollide::query::Contact<Point>,
-            ),
-        >,
+        Vec<(
+            Arc<Terminal>,
+            Arc<Terminal>,
+            ncollide2d::query::Contact<f64>,
+        )>,
     > {
         if let Some((ref line, ref bv)) = edge.line {
             let mut candidates = Vec::new();
@@ -198,10 +200,12 @@ impl ComponentList {
         ta: &Arc<Terminal>,
         tb: &Arc<Terminal>,
     ) -> (Option<ComponentIndex>, Option<ComponentIndex>) {
-        let a_idx = self.terminal_to_component
+        let a_idx = self
+            .terminal_to_component
             .get(&raw_terminal_ptr(ta))
             .map(|x| *x);
-        let b_idx = self.terminal_to_component
+        let b_idx = self
+            .terminal_to_component
             .get(&raw_terminal_ptr(tb))
             .map(|x| *x);
 
@@ -248,8 +252,7 @@ impl ComponentList {
             b: Arc::clone(b),
         });
 
-        self.broad_phase
-            .deferred_add(phase_id, line.aabb(), phase_id);
+        self.broad_phase.create_proxy(line.aabb(), phase_id);
 
         if let Some(target_idx) = target_idx {
             if let Some(src_idx) = src_idx {
@@ -290,7 +293,7 @@ impl ComponentList {
             // Create a new component
             let comp_idx = self.components.len();
             let comp = Component {
-                terminals: hashset!{Arc::clone(a), Arc::clone(b)},
+                terminals: hashset! {Arc::clone(a), Arc::clone(b)},
                 paths: vec![(Arc::clone(a), Arc::clone(b), line.clone())],
                 hull: line,
             };
@@ -302,15 +305,14 @@ impl ComponentList {
                 .insert(raw_terminal_ptr(b), comp_idx);
         }
 
-        self.broad_phase
-            .update(&mut |a, b| a != b, &mut |_, _, _| {});
+        self.broad_phase.update(&mut InterferenceHandler {});
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct PathEdge {
     pub base_cost: f64,
-    pub line: Option<(Shape, ncollide::bounding_volume::AABB<Point>)>,
+    pub line: Option<(Shape, ncollide2d::bounding_volume::AABB<f64>)>,
 }
 
 impl PathEdge {
@@ -331,8 +333,6 @@ impl PathEdge {
         }
     }
 }
-
-
 
 pub type AssignGraphMap = DiGraphMap<Node, PathEdge>;
 
@@ -570,21 +570,20 @@ impl Configuration {
         a: &Arc<Terminal>,
         b: &Arc<Terminal>,
         comp_list: &ComponentList,
-        contacts: &Vec<
-            (
-                Arc<Terminal>,
-                Arc<Terminal>,
-                ncollide::query::Contact<Point>,
-            ),
-        >,
+        contacts: &Vec<(
+            Arc<Terminal>,
+            Arc<Terminal>,
+            ncollide2d::query::Contact<f64>,
+        )>,
     ) -> f64 {
         let mut cost = 0.0;
         for &(ref terminal_a, ref terminal_b, _) in contacts.iter() {
             // If we would legitimately be forming a component, there
             // is no need to detour
-            if terminal_a.net_name == a.net_name || terminal_b.net_name == a.net_name ||
-                terminal_a.net_name == b.net_name ||
-                terminal_b.net_name == b.net_name
+            if terminal_a.net_name == a.net_name
+                || terminal_b.net_name == a.net_name
+                || terminal_a.net_name == b.net_name
+                || terminal_b.net_name == b.net_name
             {
                 continue;
             }
@@ -601,7 +600,8 @@ impl Configuration {
             let component_idx = comp_list.terminal_to_component[&raw_terminal_ptr(terminal_a)];
             let comp = &comp_list.components[component_idx];
 
-            if let Some(detour) = comp.hull
+            if let Some(detour) = comp
+                .hull
                 .detour_path(&a.point, &b.point, self.shared.clearance)
             {
                 let (detour_cost, _) = shortest_path(
@@ -610,7 +610,8 @@ impl Configuration {
                     b.point.into(),
                     |(_, _, cost)| *cost,
                     None,
-                ).expect("must be a path");
+                )
+                .expect("must be a path");
                 cost += detour_cost;
             }
         }
@@ -759,7 +760,8 @@ impl Configuration {
         // Comparing the base cost of the path with the final cost helps us
         // decide if there is potential for an improvement.
 
-        let mut needs_improvement: Vec<(_, _, _)> = self.assignment
+        let mut needs_improvement: Vec<(_, _, _)> = self
+            .assignment
             .iter()
             .enumerate()
             .filter_map(|(idx, ref assignment)| {
@@ -837,16 +839,18 @@ impl Configuration {
                 let b = assignment.path[i + 1];
 
                 match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
-                    (Some(a), Some(b)) => if a.layer == b.layer {
-                        let ta = &self.shared.terminal_by_id[&a.terminal_id];
-                        let tb = &self.shared.terminal_by_id[&b.terminal_id];
+                    (Some(a), Some(b)) => {
+                        if a.layer == b.layer {
+                            let ta = &self.shared.terminal_by_id[&a.terminal_id];
+                            let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
-                        if let Some(paths) = paths.get_mut(&b.layer) {
-                            if ta.point != tb.point {
-                                paths.push((ta.point.into(), tb.point.into()));
+                            if let Some(paths) = paths.get_mut(&b.layer) {
+                                if ta.point != tb.point {
+                                    paths.push((ta.point.into(), tb.point.into()));
+                                }
                             }
                         }
-                    },
+                    }
                     _ => {}
                 }
             }

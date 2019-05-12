@@ -121,7 +121,8 @@ fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
                 },
             }),
             _ => None,
-        }).collect();
+        })
+        .collect();
 
     Component {
         name: symbol.name.clone(),
@@ -147,7 +148,8 @@ pub fn diode() -> Arc<Component> {
         "pspice",
         "DIODE",
         "Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
-    ).unwrap()
+    )
+    .unwrap()
 }
 
 pub fn mx_switch() -> Arc<Component> {
@@ -155,5 +157,6 @@ pub fn mx_switch() -> Arc<Component> {
         "Switch",
         "SW_Push",
         "Button_Switch_Keyboard:SW_Cherry_MX1A_1.00u_PCB",
-    ).unwrap()
+    )
+    .unwrap()
 }

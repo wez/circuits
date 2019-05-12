@@ -2,12 +2,12 @@
 // computed shortest path.  See https://github.com/bluss/petgraph/issues/140
 // which raised the request to do so.
 
-use std::collections::{BinaryHeap, HashMap};
-use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::hash::Hash;
-use petgraph::visit::{EdgeRef, IntoEdges, Visitable};
 use petgraph::algo::Measure;
+use petgraph::visit::{EdgeRef, IntoEdges, Visitable};
 use std::cmp::Ordering;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::collections::{BinaryHeap, HashMap};
+use std::hash::Hash;
 
 #[derive(Copy, Clone, Debug)]
 pub struct MinScored<K, T>(pub K, pub T, pub usize);
@@ -111,12 +111,14 @@ where
 
             if !dist.contains_key(&next) {
                 match seen.entry(next) {
-                    Occupied(ent) => if total_dist < *ent.get() {
-                        *ent.into_mut() = total_dist;
-                        pred.insert(next, node);
-                        visit_next.push(MinScored(total_dist, next, counter));
-                        counter += 1;
-                    },
+                    Occupied(ent) => {
+                        if total_dist < *ent.get() {
+                            *ent.into_mut() = total_dist;
+                            pred.insert(next, node);
+                            visit_next.push(MinScored(total_dist, next, counter));
+                            counter += 1;
+                        }
+                    }
                     Vacant(ent) => {
                         ent.insert(total_dist);
                         pred.insert(next, node);

@@ -18,7 +18,7 @@ use kicad_parse_gen::Adjust;
 use petgraph::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 pub mod components;
@@ -44,7 +44,7 @@ pub struct Net {
     pub name: String,
 }
 
-static NEXT_NET_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+static NEXT_NET_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Net {
     pub fn new() -> Self {
@@ -318,7 +318,8 @@ fn merge_connected_nets(mut instances: Vec<Inst>) -> (Vec<Inst>, Vec<Net>) {
                 .filter_map(|node| match node {
                     Node::NetNode(net_id) => id_to_net.get(net_id),
                     _ => None,
-                }).collect();
+                })
+                .collect();
 
             // Pick the winning net
             nets.sort_unstable();
@@ -489,7 +490,8 @@ pub fn apply_seeed_drc(layout: &mut Layout) {
         .filter_map(|element| match element {
             Element::Net(net) if net.name.0 != "" => Some(net.name.clone()),
             _ => None,
-        }).collect();
+        })
+        .collect();
 
     use kicad_parse_gen::layout::NetClass;
 
@@ -804,7 +806,8 @@ fn layout_to_geom_collection(layout: &Layout) -> GeometryCollection<f64> {
         .filter_map(|ele| match ele {
             Element::Module(module) => Some(module.to_geom()),
             _ => None,
-        }).collect()
+        })
+        .collect()
 }
 
 fn compute_bounding_box(layout: &Layout) -> Rect<f64> {

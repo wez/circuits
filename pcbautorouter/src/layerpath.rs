@@ -1,23 +1,24 @@
 // Find a path for a set of terminals on a single layer
-use std::collections::{HashMap, HashSet};
+use super::layerassign::InterferenceHandler;
+use dijkstra::shortest_path;
 use features::Terminal;
+use geom::{OrderedPoint, Shape};
+use ncollide2d::bounding_volume::AABB;
+use ncollide2d::broad_phase::BroadPhase;
+use ncollide2d::broad_phase::DBVTBroadPhase;
+use petgraph::graphmap::UnGraphMap;
+use progress::Progress;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+use std::collections::{HashMap, HashSet};
+use std::f64::INFINITY;
 use std::rc::Rc;
 use std::sync::Arc;
-use geom::{OrderedPoint, Point, Shape};
-use dijkstra::shortest_path;
-use ncollide::broad_phase::BroadPhase;
-use ncollide::broad_phase::DBVTBroadPhase;
-use ncollide::bounding_volume::AABB;
-use progress::Progress;
-use petgraph::graphmap::UnGraphMap;
-use std::f64::INFINITY;
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 extern crate nalgebra as na;
 
 type Path = (OrderedPoint, OrderedPoint);
-type PadBroadPhase = DBVTBroadPhase<Point, AABB<Point>, usize>;
+type PadBroadPhase = DBVTBroadPhase<f64, AABB<f64>, usize>;
 
-type TerminalBroadPhase = DBVTBroadPhase<Point, AABB<Point>, usize>;
+type TerminalBroadPhase = DBVTBroadPhase<f64, AABB<f64>, usize>;
 
 pub type CDTGraph = UnGraphMap<OrderedPoint, f64>;
 
@@ -44,7 +45,7 @@ impl Assignment {
     fn new(clearance: f64) -> Assignment {
         Assignment {
             assignment: HashMap::new(),
-            broad_phase: TerminalBroadPhase::new(clearance, false),
+            broad_phase: TerminalBroadPhase::new(clearance),
             paths: Vec::new(),
             path_lines: Vec::new(),
         }
@@ -59,7 +60,7 @@ struct Component {
 struct ComponentWithHull {
     twonets: Vec<Path>,
     lines: Vec<Shape>,
-    bvs: Vec<AABB<Point>>,
+    bvs: Vec<AABB<f64>>,
     hull: Shape,
     broad: TerminalBroadPhase,
 }
@@ -72,21 +73,22 @@ struct ComponentGrouper {
 
 impl ComponentWithHull {
     fn new(comp: &Component) -> ComponentWithHull {
-        let lines = comp.twonets
+        let lines = comp
+            .twonets
             .iter()
             .map(|&(a, b)| Shape::line(&a.point(), &b.point()))
             .collect();
         let hull = Shape::convex_hull(&lines);
 
-        let mut broad = TerminalBroadPhase::new(0.0, false);
+        let mut broad = TerminalBroadPhase::new(0.0);
         let mut bvs = Vec::new();
 
         for (idx, line) in lines.iter().enumerate() {
             let bv = line.aabb();
-            broad.deferred_add(idx, bv.clone(), idx);
+            broad.create_proxy(bv.clone(), idx);
             bvs.push(bv);
         }
-        broad.update(&mut |a, b| a != b, &mut |_, _, _| {});
+        broad.update(&mut InterferenceHandler {});
 
         ComponentWithHull {
             twonets: comp.twonets.clone(),
@@ -207,12 +209,12 @@ impl PathConfiguration {
         paths: &Vec<Path>,
         all_pads: &Vec<Arc<Terminal>>,
     ) -> PathConfiguration {
-        let mut pads = PadBroadPhase::new(clearance, false);
+        let mut pads = PadBroadPhase::new(clearance);
 
         for (idx, term) in all_pads.iter().enumerate() {
-            pads.deferred_add(idx, term.shape.aabb(), idx);
+            pads.create_proxy(term.shape.aabb(), idx);
         }
-        pads.update(&mut |a, b| a != b, &mut |_, _, _| {});
+        pads.update(&mut InterferenceHandler {});
 
         let mut components = ComponentGrouper::default();
         components.add_paths(&paths);
@@ -288,11 +290,13 @@ impl PathConfiguration {
 
     fn a_to_b(&mut self, a: OrderedPoint, b: OrderedPoint, is_incident: bool) {
         match self.assignment.assignment.entry(a) {
-            Occupied(mut ent) => if is_incident {
-                ent.get_mut().incident.push(b);
-            } else {
-                ent.get_mut().attached.push(b);
-            },
+            Occupied(mut ent) => {
+                if is_incident {
+                    ent.get_mut().incident.push(b);
+                } else {
+                    ent.get_mut().attached.push(b);
+                }
+            }
             Vacant(ent) => {
                 let mut info = TerminalInfo {
                     attached: Vec::new(),
@@ -316,11 +320,9 @@ impl PathConfiguration {
             let line = Shape::line(&a.point(), &b.point());
 
             let edge_idx = self.assignment.paths.len();
-            self.assignment.broad_phase.deferred_add(
-                self.assignment.paths.len(),
-                line.aabb(),
-                edge_idx,
-            );
+            self.assignment
+                .broad_phase
+                .create_proxy(line.aabb(), edge_idx);
             self.assignment.paths.push(path);
             self.assignment.path_lines.push(line);
             self.a_to_b(a, b, i == 0);
@@ -328,7 +330,7 @@ impl PathConfiguration {
         }
         self.assignment
             .broad_phase
-            .update(&mut |a, b| a != b, &mut |_, _, _| {});
+            .update(&mut InterferenceHandler {});
     }
 
     /// This method computes the order in which we will route the paths in

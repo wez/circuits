@@ -1,29 +1,28 @@
 extern crate nalgebra as na;
-extern crate ncollide;
-use ncollide::transformation::ToPolyline;
-use std::sync::Arc;
+extern crate ncollide2d;
 use geo;
 use geo::convexhull::ConvexHull;
 use geo::simplify::Simplify;
+use ncollide2d::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
+use ncollide2d::query::Proximity::Intersecting;
+use ncollide2d::query::{contact, proximity, Contact, Proximity};
+use ncollide2d::transformation::ToPolyline;
+use ordered_float::OrderedFloat;
+use petgraph::graphmap::UnGraphMap;
 use polyoffset::{buffer, JoinType};
+use spade::HasPosition;
+use std::cmp::Ordering;
 use std::fmt::{Debug, Error, Formatter};
 use std::result::Result;
-use ncollide::query::{contact, proximity, Contact, Proximity};
-use ncollide::query::Proximity::Intersecting;
-use ncollide::bounding_volume::{aabb, bounding_sphere, BoundingSphere, AABB};
-use petgraph::graphmap::UnGraphMap;
-use ordered_float::OrderedFloat;
-use std::cmp::Ordering;
-use spade::HasPosition;
 
 pub type Point = na::Point2<f64>;
 pub type Location = na::Isometry2<f64>;
 pub type Similarity = na::Similarity2<f64>;
-pub type Polyline = ncollide::shape::Polyline2<f64>;
-pub type ShapeHandle = ncollide::shape::ShapeHandle2<f64>;
+pub type Polyline = ncollide2d::shape::Polyline<f64>;
+pub type ShapeHandle = ncollide2d::shape::ShapeHandle<f64>;
 pub type Vector = na::Vector2<f64>;
-pub type Circle = ncollide::shape::Ball2<f64>;
-pub type Capsule = ncollide::shape::Capsule<f64>;
+pub type Circle = ncollide2d::shape::Ball<f64>;
+pub type Capsule = ncollide2d::shape::Capsule<f64>;
 
 // Number of points to use when expanding polylines.
 // More points means higher quality curves, but is more expensive
@@ -122,12 +121,7 @@ impl Shape {
         indices.push(na::Point2::new(points.len() - 1, 0));
 
         Shape {
-            handle: ShapeHandle::new(Polyline::new(
-                Arc::new(points),
-                Arc::new(indices),
-                None,
-                None,
-            )),
+            handle: ShapeHandle::new(Polyline::new(points, Some(indices))),
             location: location,
             width: width,
         }
@@ -176,12 +170,12 @@ impl Shape {
     }
 
     // returns the axis-aligned bounding-box
-    pub fn aabb(&self) -> AABB<Point> {
+    pub fn aabb(&self) -> AABB<f64> {
         aabb(&*self.handle, &self.location)
     }
 
     // returns the bounding sphere
-    pub fn bounding_sphere(&self) -> BoundingSphere<Point> {
+    pub fn bounding_sphere(&self) -> BoundingSphere<f64> {
         bounding_sphere(&*self.handle, &self.location)
     }
 
@@ -214,7 +208,7 @@ impl Shape {
 
     pub fn is_verticalish_line(&self) -> bool {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
-            let vertices = &poly.vertices();
+            let vertices = &poly.points();
             let a = &vertices[0];
             let b = &vertices[1];
 
@@ -231,7 +225,7 @@ impl Shape {
         if let Some(poly) = self.handle.as_shape::<Polyline>() {
             let mut points = Vec::new();
 
-            for p in poly.vertices().iter() {
+            for p in poly.points().iter() {
                 points.push(self.location * p);
             }
 
@@ -275,7 +269,6 @@ impl Shape {
         )
     }
 
-
     // Explicitly compute the convex hull.  The ncollide hull routines use
     // the implicit hull for collision detection purposes, so we use the geo
     // library to generate an explicit polygon for the hull.
@@ -288,14 +281,15 @@ impl Shape {
             })
             .collect();
         let hull = polys.convex_hull();
-        let points = hull.exterior
+        let points = hull
+            .exterior
             .into_iter()
             .map(|p| Point::new(p.x, p.y))
             .collect();
         Shape::polygon(points, origin(), None)
     }
 
-    pub fn contact(&self, other: &Shape, clearance: f64) -> Option<Contact<Point>> {
+    pub fn contact(&self, other: &Shape, clearance: f64) -> Option<Contact<f64>> {
         contact(
             &self.location,
             &*self.handle,
@@ -445,7 +439,7 @@ impl Debug for Shape {
             write!(
                 fmt,
                 "Polyline with {} vertices at {}",
-                poly.vertices().len(),
+                poly.points().len(),
                 self.location
             )?;
         } else if let Some(circle) = self.handle.as_shape::<Circle>() {

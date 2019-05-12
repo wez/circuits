@@ -1,6 +1,6 @@
 use indicatif::{ProgressBar, ProgressBarIter, ProgressStyle};
-use std::time::{Duration, Instant};
 use std::fmt;
+use std::time::{Duration, Instant};
 
 /// Convenience wrapper around a progress bar that includes the total time
 /// in the final message it prints out, and does so automatically when it
@@ -35,7 +35,7 @@ impl fmt::Display for PreciseFormattedDuration {
                         return write!(f, "{} {}", cnt, $pl);
                     }
                 }
-            }
+            };
         }
 
         try_unit!(365 * 24 * 60 * 60, "year", "years", "y");

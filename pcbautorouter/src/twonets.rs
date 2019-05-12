@@ -1,12 +1,11 @@
-use petgraph::algo::min_spanning_tree;
-use petgraph::graph::UnGraph;
-use petgraph::data::FromElements;
 use features::{LayerSet, Terminal};
-use itertools::Itertools;
 use geom;
+use itertools::Itertools;
+use ncollide2d::query::Proximity::Disjoint;
+use petgraph::algo::min_spanning_tree;
+use petgraph::data::FromElements;
+use petgraph::graph::UnGraph;
 use std::sync::Arc;
-use ncollide::query::Proximity::Disjoint;
-
 
 // TODO: consider http://vlsicad.ucsd.edu/Publications/Conferences/142/c142.ps
 
@@ -89,9 +88,7 @@ pub fn compute_2nets(
     // Compute hanan grid, but avoid obstacles, including our own pads
     let h_grid: Vec<geom::Point> = hanan_grid(&terminal_points)
         .into_iter()
-        .filter(|p| {
-            !intersects_obstacle(p, &via_shape, clearance, &all_pads)
-        })
+        .filter(|p| !intersects_obstacle(p, &via_shape, clearance, &all_pads))
         .collect();
 
     loop {
@@ -116,9 +113,11 @@ pub fn compute_2nets(
                     None => {
                         best = Some((cost, candidate_points.clone(), g));
                     }
-                    Some((best_cost, _, _)) => if cost < best_cost {
-                        best = Some((cost, candidate_points.clone(), g));
-                    },
+                    Some((best_cost, _, _)) => {
+                        if cost < best_cost {
+                            best = Some((cost, candidate_points.clone(), g));
+                        }
+                    }
                 }
             }
         }
