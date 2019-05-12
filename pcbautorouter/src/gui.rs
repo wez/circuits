@@ -107,7 +107,7 @@ fn draw_gui(
             .flip_v()
             .trans(padding / 2.0, -(size.height as f64) + padding / 2.0);
 
-        if state.reset_if_changed(size.height, size.width) {
+        if state.reset_if_changed(size.height as u32, size.width as u32) {
             clear(DARK_CHARCOAL, g);
 
             // First, compute the overall bounds of the shapes we want to render.

@@ -16,7 +16,7 @@ nalgebra = "0.18"
 ncollide2d = "0.19"
 ordered-float = "1.0"
 petgraph = "0.4"
-piston_window = "~0.81"
+piston_window = "0.89"
 # We probably want 1.5.2; we need cdtEdge to be public
 # and that is in master at the time of writing
 spade = {git = "https://github.com/Stoeoef/spade"}
