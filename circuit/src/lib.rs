@@ -56,6 +56,12 @@ impl Net {
     }
 }
 
+impl Default for Net {
+    fn default() -> Self {
+        Net::new()
+    }
+}
+
 impl PartialOrd for Net {
     fn partial_cmp(&self, other: &Net) -> Option<Ordering> {
         if self.is_auto_net() == other.is_auto_net() {
@@ -285,7 +291,7 @@ fn merge_connected_nets(mut instances: Vec<Inst>) -> (Vec<Inst>, Vec<Net>) {
             for ass in &inst.assignments {
                 let next_id = net_to_id.len();
                 let net_id = *net_to_id.entry(&ass.net).or_insert(next_id);
-                id_to_net.entry(net_id).or_insert(ass.net.clone());
+                id_to_net.entry(net_id).or_insert_with(|| ass.net.clone());
 
                 let pin_index = ass.pin_index;
 
@@ -345,19 +351,17 @@ fn merge_connected_nets(mut instances: Vec<Inst>) -> (Vec<Inst>, Vec<Net>) {
     for (idx, comp) in components.iter().enumerate() {
         let net = &net_by_comp[idx];
         for node in comp {
-            match node {
-                Node::InstNode {
-                    inst_idx,
-                    pin_index,
-                } => {
-                    if !instances[*inst_idx].pin_idx_is_assigned(*pin_index) {
-                        instances[*inst_idx].assignments.push(PinAssignment {
-                            pin_index: *pin_index,
-                            net: (*net).clone(),
-                        });
-                    }
+            if let Node::InstNode {
+                inst_idx,
+                pin_index,
+            } = node
+            {
+                if !instances[*inst_idx].pin_idx_is_assigned(*pin_index) {
+                    instances[*inst_idx].assignments.push(PinAssignment {
+                        pin_index: *pin_index,
+                        net: (*net).clone(),
+                    });
                 }
-                _ => {}
             }
         }
     }
@@ -531,7 +535,7 @@ impl Circuit {
 
             // assign pads to nets
             for ass in &inst.assignments {
-                let net_idx = net_to_idx.get(&ass.net).unwrap();
+                let net_idx = &net_to_idx[&ass.net];
                 let net = KicadFootprintNet {
                     name: NetName(ass.net.name.clone()),
                     num: *net_idx as i64,
@@ -756,7 +760,7 @@ impl Circuit {
                 },
             ],
             elements,
-            version: 20171130,
+            version: 2017_1130,
         };
 
         apply_seeed_drc(&mut layout);

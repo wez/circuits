@@ -162,7 +162,7 @@ impl LayerManipulation for Module {
                 Element::At(_) => {
                     // Skip: we handled this already above
                 }
-                e @ _ => e.flip(),
+                e => e.flip(),
             }
         }
     }

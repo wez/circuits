@@ -28,13 +28,10 @@ impl SymbolLoader {
             return lib.find(|sym| symbol_matches_name(sym, name)).cloned();
         }
 
-        match self.load_library(library) {
-            Err(err) => {
-                eprintln!("failed to load library {}: {}", library, err);
-                return None;
-            }
-            Ok(_) => {}
-        };
+        if let Err(err) = self.load_library(library) {
+            eprintln!("failed to load library {}: {}", library, err);
+            return None;
+        }
 
         if let Some(lib) = self.sym_by_lib.get(library) {
             return lib.find(|sym| symbol_matches_name(sym, name)).cloned();
@@ -48,13 +45,10 @@ impl SymbolLoader {
             return Some(module.clone());
         }
 
-        match self.load_module(&footprint) {
-            Err(err) => {
-                eprintln!("failed to load footprint {}: {}", footprint, err);
-                return None;
-            }
-            Ok(_) => {}
-        };
+        if let Err(err) = self.load_module(&footprint) {
+            eprintln!("failed to load footprint {}: {}", footprint, err);
+            return None;
+        }
 
         self.mod_by_path.get(footprint).cloned()
     }
@@ -92,7 +86,7 @@ impl SymbolLoader {
         let module = if path.is_absolute() {
             read_module(&path)?
         } else {
-            let elements: Vec<&str> = footprint.splitn(2, ":").collect();
+            let elements: Vec<&str> = footprint.splitn(2, ':').collect();
             let mut abs_path = PathBuf::from("/usr/share/kicad/modules");
             abs_path.push(format!("{}.pretty", elements[0]));
             abs_path.push(format!("{}.kicad_mod", elements[1]));
