@@ -13,5 +13,4 @@ petgraph = "0.4"
 
 [dependencies.kicad_parse_gen]
 git = "https://github.com/wez/kicad-parse-gen.git"
-branch = "symbolorder"
-version = "7.0.2"
+branch = "symbolorder-kicad5"

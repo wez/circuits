@@ -5,7 +5,7 @@ use kicad_parse_gen::footprint::{
     NetName, Xy, XyType,
 };
 use kicad_parse_gen::layout::{
-    Area, Element, General, GrLine, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
+    Element, General, GrLine, Host, Layer, LayerType, Layout, Net as KicadNet, Setup,
 };
 use kicad_parse_gen::Adjust;
 use petgraph::prelude::*;
@@ -557,14 +557,6 @@ impl Circuit {
                 build: "0.1.0".into(),
             },
             general: General {
-                links: 0,
-                no_connects: 0,
-                area: Area {
-                    x1: 0.0,
-                    y1: 0.0,
-                    x2: 0.0,
-                    y2: 0.0,
-                },
                 thickness: 1.6,
                 drawings: 0,
                 tracks: 0,
@@ -831,11 +823,6 @@ fn adjust_to_fit_page(layout: &mut Layout) {
     let y_off = (LETTER_HEIGHT - height) / 2.0;
 
     layout.adjust(x_off - bounds.min.x, y_off - bounds.min.y);
-
-    layout.general.area.x1 = x_off;
-    layout.general.area.x2 = x_off + width;
-    layout.general.area.y1 = y_off;
-    layout.general.area.y2 = y_off + height;
 }
 
 fn compute_hull(layout: &Layout) -> Polygon<f64> {
