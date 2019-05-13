@@ -26,6 +26,12 @@ impl Net {
     }
 }
 
+impl std::fmt::Display for Net {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        self.name.fmt(fmt)
+    }
+}
+
 impl Default for Net {
     fn default() -> Self {
         Net::new()

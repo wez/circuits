@@ -7,17 +7,30 @@ struct Inner {
     name: String,
     description: Option<String>,
     pins: Vec<Pin>,
-    footprint: Module,
+    footprint: Option<Module>,
 }
 
 impl Eq for Inner {}
+
+fn is_same_optional_module(a: &Option<Module>, b: &Option<Module>) -> bool {
+    if a.is_none() && b.is_none() {
+        return true;
+    }
+    if a.is_some() && b.is_some() {
+        let a = a.as_ref().unwrap();
+        let b = b.as_ref().unwrap();
+        a.name == b.name
+    } else {
+        false
+    }
+}
 
 impl PartialEq for Inner {
     fn eq(&self, other: &Inner) -> bool {
         self.name == other.name
             && self.description == other.description
             && self.pins == other.pins
-            && self.footprint.name == other.footprint.name
+            && is_same_optional_module(&self.footprint, &other.footprint)
     }
 }
 
@@ -28,7 +41,12 @@ pub struct Component {
 }
 
 impl Component {
-    pub fn new(name: &str, description: Option<String>, pins: Vec<Pin>, footprint: Module) -> Self {
+    pub fn new(
+        name: &str,
+        description: Option<String>,
+        pins: Vec<Pin>,
+        footprint: Option<Module>,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 name: name.to_owned(),
@@ -52,8 +70,8 @@ impl Component {
         &self.inner.pins
     }
 
-    pub fn footprint(&self) -> &Module {
-        &self.inner.footprint
+    pub fn footprint(&self) -> Option<&Module> {
+        self.inner.footprint.as_ref()
     }
 
     pub fn name(&self) -> &str {

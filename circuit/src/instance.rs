@@ -95,17 +95,26 @@ impl Inst {
     /// filled out.  This footprint doesn't have any pad assignment
     /// performed.  It is intended to be used to compute size and
     /// bounds only.
-    pub fn make_footprint(&self) -> Module {
-        let mut footprint = self.component.footprint().clone();
-        footprint.set_location(self.coordinates, self.rotation);
-        if self.flipped {
-            footprint.flip_layer();
+    pub fn make_footprint(&self) -> Option<Module> {
+        match self.component.footprint() {
+            Some(footprint) => {
+                let mut footprint = footprint.clone();
+                footprint.set_location(self.coordinates, self.rotation);
+                if self.flipped {
+                    footprint.flip_layer();
+                }
+                Some(footprint)
+            }
+            None => None,
         }
-        footprint
     }
 
-    pub fn hull(&self) -> Polygon<f64> {
-        convex_hull(self.make_footprint().to_geom())
+    pub fn hull(&self) -> Option<Polygon<f64>> {
+        if let Some(fp) = self.make_footprint() {
+            Some(convex_hull(fp.to_geom()))
+        } else {
+            None
+        }
     }
 
     /// For the set of instances provided, compute the set of connected

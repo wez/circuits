@@ -18,7 +18,7 @@ pub enum PinDrive {
     Power = 7,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
 pub enum PinType {
     PowerInput,
     PowerOutput,
@@ -84,6 +84,24 @@ impl PinType {
             PinType::Passive => PinDrive::Power,
             PinType::OpenCollector => PinDrive::TriState,
             PinType::OpenEmitter => PinDrive::TriState,
+        }
+    }
+
+    pub fn incompatible_pin_pairing(&self, other: PinType) -> bool {
+        // These might be redundant with the drive strength checks;
+        // happy to remove them if that proves to be true
+        match (self, other) {
+            (PinType::Out, PinType::Out) => true,
+            (PinType::PowerOutput, PinType::TriState) => true,
+            (PinType::PowerOutput, PinType::Out) => true,
+            (PinType::PowerOutput, PinType::PowerOutput) => true,
+            (PinType::OpenCollector, PinType::Out) => true,
+            (PinType::OpenCollector, PinType::TriState) => true,
+            (PinType::OpenCollector, PinType::PowerOutput) => true,
+            (PinType::OpenEmitter, PinType::Out) => true,
+            (PinType::OpenEmitter, PinType::PowerOutput) => true,
+            (PinType::NotConnected, _) => true,
+            _ => false,
         }
     }
 }

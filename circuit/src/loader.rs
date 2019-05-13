@@ -149,7 +149,7 @@ impl LibraryLocator {
 struct IdKey {
     library: LibraryLocator,
     sym_name: String,
-    footprint_name: FootprintLocator,
+    footprint_name: Option<FootprintLocator>,
 }
 
 #[derive(Default)]
@@ -207,7 +207,7 @@ impl SymbolLoader {
         &mut self,
         library: LibraryLocator,
         name: &str,
-        footprint: FootprintLocator,
+        footprint: Option<FootprintLocator>,
     ) -> Option<Component> {
         let key = IdKey {
             library: library.clone(),
@@ -218,7 +218,10 @@ impl SymbolLoader {
             return Some(comp.clone());
         }
 
-        let module = self.resolve_module(footprint)?;
+        let module = match footprint {
+            Some(footprint) => Some(self.resolve_module(footprint)?),
+            None => None,
+        };
 
         let sym = self.resolve_symbol(library, name)?;
 
@@ -229,7 +232,7 @@ impl SymbolLoader {
     }
 }
 
-fn convert_to_component(symbol: &Symbol, module: Module) -> Component {
+fn convert_to_component(symbol: &Symbol, module: Option<Module>) -> Component {
     let pins = symbol
         .draw
         .iter()
@@ -278,7 +281,7 @@ pub fn find_kicad_share() -> Fallible<PathBuf> {
 pub fn load(
     library: LibraryLocator,
     symbol: &str,
-    footprint: FootprintLocator,
+    footprint: Option<FootprintLocator>,
 ) -> Option<Component> {
     LOADER
         .lock()
@@ -290,11 +293,11 @@ pub fn diode() -> Component {
     load(
         LibraryLocator::github("pspice", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "DIODE",
-        FootprintLocator::github(
+        Some(FootprintLocator::github(
             "Diode_THT",
             "D_DO-35_SOD27_P7.62mm_Horizontal",
             "ecdc99213888760c52c578f3d4ccf88652ddf2c8",
-        ),
+        )),
     )
     .unwrap()
 }
@@ -303,11 +306,35 @@ pub fn mx_switch() -> Component {
     load(
         LibraryLocator::github("Switch", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
         "SW_Push",
-        FootprintLocator::github(
+        Some(FootprintLocator::github(
             "Button_Switch_Keyboard",
             "SW_Cherry_MX_1.00u_PCB",
             "ecdc99213888760c52c578f3d4ccf88652ddf2c8",
-        ),
+        )),
+    )
+    .unwrap()
+}
+
+pub fn vdc_supply() -> Component {
+    load(
+        LibraryLocator::github("power", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
+        "+VDC",
+        None,
+    )
+    .unwrap()
+}
+
+/// PWR_FLAG is used in a schematic to indicate where power is being supplied
+/// to the circuit.  It has no footprint and is used purely as a hint for the
+/// eletrical_rules_check function.
+/// If you encounter an error message like "drive `None` is below the minimum
+/// allowed drive `Power` for ..." then it is likely that you need to add
+/// and connect a pwr_flag to your circuit.
+pub fn pwr_flag() -> Component {
+    load(
+        LibraryLocator::github("power", "e88e195c388f5fdd98a5e6cb31ed3e38a42ad64d"),
+        "PWR_FLAG",
+        None,
     )
     .unwrap()
 }
