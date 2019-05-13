@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/wez/circuits.svg?branch=master)](https://travis-ci.org/wez/circuits)
+
 # Geom crates to evaluate:
 
 https://github.com/georust/geo
