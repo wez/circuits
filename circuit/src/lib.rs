@@ -47,14 +47,17 @@ mod tests {
     #[test]
     fn erc_power_not_connected() {
         let mut circuit = CircuitBuilder::default();
-        let vdc = vdc_supply().inst_with_name("VDC");
+        let mut vdc = vdc_supply().inst_with_name("VDC");
+        // The net is here purely for test determinism, otherwise
+        // we end up with an unpredictable auto-generated net name
+        vdc.pin_ref("+VDC").connect_net(Net::with_name("vdc"));
         circuit.add_inst(vdc);
         let circuit = circuit.build();
         let problems = circuit.eletrical_rules_check();
         assert_eq!(
             problems,
             vec![ErcItem::error(
-                "Net `N$2`: drive `None` is below the minimum allowed drive \
+                "Net `vdc`: drive `None` is below the minimum allowed drive \
                  `Power` for component `VDC` pin 0 PowerInput (Do you need \
                  to connect a pwr_flag() to this net?)"
             )]
