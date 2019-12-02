@@ -19,5 +19,5 @@ log = "0.4"
 env_logger="0.6"
 
 [dependencies.kicad_parse_gen]
-git = "https://github.com/wez/kicad-parse-gen.git"
-branch = "symbolorder-kicad5"
+git = "https://github.com/productize/kicad-parse-gen.git"
+branch = "kicad5"
