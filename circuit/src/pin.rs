@@ -35,7 +35,7 @@ pub enum PinType {
 
 impl PinType {
     /// Returns the drive strength associated with this type of pin
-    pub fn drive_strength(&self) -> PinDrive {
+    pub fn drive_strength(self) -> PinDrive {
         match self {
             PinType::PowerInput => PinDrive::None,
             PinType::PowerOutput => PinDrive::Power,
@@ -53,7 +53,7 @@ impl PinType {
 
     /// Returns the minimum amount of drive that the pin must receive
     /// in order to function
-    pub fn min_input_drive(&self) -> PinDrive {
+    pub fn min_input_drive(self) -> PinDrive {
         match self {
             PinType::PowerInput => PinDrive::Power,
             PinType::PowerOutput => PinDrive::None,
@@ -71,7 +71,7 @@ impl PinType {
 
     /// Returns the maximum amount of drive that the pin can receive
     /// and still function
-    pub fn max_input_drive(&self) -> PinDrive {
+    pub fn max_input_drive(self) -> PinDrive {
         match self {
             PinType::PowerInput => PinDrive::Power,
             PinType::PowerOutput => PinDrive::Passive,
@@ -87,7 +87,7 @@ impl PinType {
         }
     }
 
-    pub fn incompatible_pin_pairing(&self, other: PinType) -> bool {
+    pub fn incompatible_pin_pairing(self, other: PinType) -> bool {
         // These might be redundant with the drive strength checks;
         // happy to remove them if that proves to be true
         match (self, other) {
