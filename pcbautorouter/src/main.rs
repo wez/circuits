@@ -262,7 +262,7 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     notifier.send(ProgressUpdate::Done());
 }
 
-fn go() -> Result<(), Box<Error>> {
+fn go() -> Result<(), Box<dyn Error>> {
     let args = App::new("pcbautorouter")
         .author("Wez Furlong")
         .version("0.0.1")
