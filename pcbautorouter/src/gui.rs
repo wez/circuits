@@ -222,8 +222,8 @@ pub fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
     window.set_swap_buffers(false);
 
     while let Some(e) = window.next() {
-        match e {
-            Event::Loop(l) => match l {
+        if let Event::Loop(l) = e {
+            match l {
                 Loop::Render(_) => {
                     draw_gui(&mut window, &e, &pcb, &features, &mut state);
                 }
@@ -245,8 +245,7 @@ pub fn run_gui(pcb: &Pcb, rx: mpsc::Receiver<ProgressUpdate>) {
                     }
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 }

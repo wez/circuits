@@ -30,6 +30,7 @@ impl<K: PartialOrd, T> PartialOrd for MinScored<K, T> {
 
 impl<K: PartialOrd, T> Ord for MinScored<K, T> {
     #[inline]
+    #[allow(clippy::eq_op)]
     fn cmp(&self, other: &MinScored<K, T>) -> Ordering {
         let a = &self.0;
         let b = &other.0;

@@ -36,6 +36,7 @@ use crate::geom::OrderedPoint;
 use crate::gui::run_gui;
 use crate::layerpath::{CDTGraph, PathConfiguration};
 
+#[allow(clippy::large_enum_variant)]
 pub enum ProgressUpdate {
     Feature(features::Features),
     Done(),
@@ -182,15 +183,12 @@ fn compute_thread(pcb: &Pcb, notifier: Notify) {
     notifier.send(ProgressUpdate::Feature(features.clone()));
 
     let mut improvement_pass = 1;
-    loop {
-        if let Some(improved) = cfg.improve_one(improvement_pass) {
-            cfg = improved;
-            features.paths_by_layer = cfg.extract_paths();
-            notifier.send(ProgressUpdate::Feature(features.clone()));
-            improvement_pass += 1;
-        } else {
-            break;
-        }
+
+    while let Some(improved) = cfg.improve_one(improvement_pass) {
+        cfg = improved;
+        features.paths_by_layer = cfg.extract_paths();
+        notifier.send(ProgressUpdate::Feature(features.clone()));
+        improvement_pass += 1;
     }
     println!(
         "improved cfg cost is {} for {} paths in {} passes",
@@ -282,7 +280,7 @@ fn go() -> Result<(), Box<dyn Error>> {
 
     {
         let pcb_copy = pcb.clone();
-        thread::spawn(move || compute_thread(&pcb_copy, Notify { tx: tx }));
+        thread::spawn(move || compute_thread(&pcb_copy, Notify { tx }));
     }
 
     run_gui(&pcb, rx);
@@ -290,11 +288,8 @@ fn go() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
-    match go() {
-        Err(e) => {
-            println!("Error: {}", e.to_string());
-            exit(1);
-        }
-        _ => {}
+    if let Err(e) = go() {
+        println!("Error: {}", e.to_string());
+        exit(1);
     }
 }

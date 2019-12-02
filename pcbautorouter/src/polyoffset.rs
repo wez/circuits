@@ -50,9 +50,9 @@ impl RoundParams {
             m_sin = -m_sin;
         }
         RoundParams {
-            steps_per_rad: steps_per_rad,
-            m_cos: m_cos,
-            m_sin: m_sin,
+            steps_per_rad,
+            m_cos,
+            m_sin,
         }
     }
 }
@@ -169,6 +169,7 @@ fn mitre(
     ));
 }
 
+#[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
 fn round(
     delta: f64,
     j: usize,
@@ -226,7 +227,7 @@ pub fn buffer(input_points: &[Point], delta: f64, join: JoinType) -> Vec<Point> 
     }
 
     // Remove sequences of duplicate points
-    let mut points: Vec<Point> = point_slice.iter().map(|x| *x).dedup().collect();
+    let mut points: Vec<Point> = point_slice.iter().copied().dedup().collect();
 
     // Fixup orientation of the points if they are counter to what we
     // require for this algorithm to work.
@@ -268,8 +269,8 @@ pub fn buffer(input_points: &[Point], delta: f64, join: JoinType) -> Vec<Point> 
             output.push(points[j].clone());
             output.push(point);
         } else {
-            match &join_type {
-                &AdjustedJoinType::Miter(limit) => {
+            match join_type {
+                AdjustedJoinType::Miter(limit) => {
                     let r = 1.0 + dot2d(&norms[j], &norms[k]);
                     if r >= limit {
                         mitre(delta, j, k, r, &points, &norms, &mut output);
@@ -277,10 +278,10 @@ pub fn buffer(input_points: &[Point], delta: f64, join: JoinType) -> Vec<Point> 
                         square(delta, j, k, &points, &norms, sin_a, &mut output);
                     }
                 }
-                &AdjustedJoinType::Square => {
+                AdjustedJoinType::Square => {
                     square(delta, j, k, &points, &norms, sin_a, &mut output);
                 }
-                &AdjustedJoinType::Round(ref params) => {
+                AdjustedJoinType::Round(ref params) => {
                     round(delta, j, k, &points, &norms, sin_a, &params, &mut output);
                 }
             }

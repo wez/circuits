@@ -121,15 +121,15 @@ impl Shape {
 
         Shape {
             handle: ShapeHandle::new(Polyline::new(points, Some(indices))),
-            location: location,
-            width: width,
+            location,
+            width,
         }
     }
 
     pub fn circle(radius: f64, location: Location) -> Shape {
         Shape {
             handle: ShapeHandle::new(Circle::new(radius)),
-            location: location,
+            location,
             width: None,
         }
     }
@@ -143,7 +143,7 @@ impl Shape {
     }
 
     pub fn line(a: &Point, b: &Point) -> Shape {
-        Shape::polygon(vec![a.clone(), b.clone()], origin(), None)
+        Shape::polygon(vec![*a, *b], origin(), None)
     }
 
     pub fn capsule(radius: f64, a: &Point, b: &Point, location: Location) -> Shape {
@@ -158,7 +158,7 @@ impl Shape {
             .to_polyline(ARC_POINTS)
             .unwrap();
 
-        let pt = points[0].clone();
+        let pt = points[0];
         points.push(pt);
 
         Shape::polygon(
@@ -179,11 +179,11 @@ impl Shape {
     }
 
     pub fn translate(&self, location: &Location) -> Shape {
-        return Shape {
+        Shape {
             handle: self.handle.clone(),
             location: location * self.location,
             width: self.width,
-        };
+        }
     }
 
     pub fn translate_by_point(&self, pt: &Point) -> Shape {
@@ -236,7 +236,7 @@ impl Shape {
             poly.transform_by(&self.location);
             let (mut points, _) = poly.unwrap();
             // close the shape!
-            let pt = points[0].clone();
+            let pt = points[0];
             points.push(pt);
             return points;
         }
@@ -271,7 +271,7 @@ impl Shape {
     // Explicitly compute the convex hull.  The ncollide hull routines use
     // the implicit hull for collision detection purposes, so we use the geo
     // library to generate an explicit polygon for the hull.
-    pub fn convex_hull(shapes: &Vec<Shape>) -> Shape {
+    pub fn convex_hull(shapes: &[Shape]) -> Shape {
         let polys: geo::MultiPolygon<_> = shapes
             .iter()
             .map(|shape| {
@@ -362,7 +362,7 @@ impl Shape {
 
         let (contacts, points) = self.all_contacts(&line, clearance);
 
-        if contacts.len() == 0 {
+        if contacts.is_empty() {
             return None;
         }
 

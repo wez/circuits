@@ -26,12 +26,14 @@ pub struct Terminal {
     pub point: Point,
 }
 
+pub type TwoNet = (Arc<Terminal>, Arc<Terminal>);
+
 #[derive(Debug, Clone)]
 pub struct Features {
     pub terminals_by_net: HashMap<String, Vec<Arc<Terminal>>>,
     pub obstacles: Vec<Arc<Terminal>>,
     pub all_pads: Vec<Arc<Terminal>>,
-    pub twonets_by_net: HashMap<String, Vec<(Arc<Terminal>, Arc<Terminal>)>>,
+    pub twonets_by_net: HashMap<String, Vec<TwoNet>>,
     pub all_layers: LayerSet,
     pub paths_by_layer: HashMap<u8, Vec<(OrderedPoint, OrderedPoint)>>,
     pub cdt_edges: Vec<(Point, Point)>,
@@ -157,7 +159,7 @@ impl Features {
                 let pad_def = &pcb.pad_defs[&pin.pad_type];
                 let mut terminal: Option<Terminal> = None;
                 let identifier = format!("{}-{}", comp.instance_name, pin.pad_num);
-                let net_name = ident_to_net.get(&identifier).map(|x| x.clone());
+                let net_name = ident_to_net.get(&identifier).cloned();
                 let x = comp.position * pin.position;
 
                 for (layer_name, pad_shape) in pad_def.pads.iter() {
@@ -169,7 +171,7 @@ impl Features {
                     let mut t = Terminal {
                         identifier: Some(identifier.clone()),
                         net_name: net_name.clone(),
-                        layers: layers,
+                        layers,
                         point: s.aabb().center(),
                         shape: s,
                     };
@@ -180,8 +182,7 @@ impl Features {
                     terminal = Some(t);
                 }
 
-                if terminal.is_some() {
-                    let t = terminal.unwrap();
+                if let Some(t) = terminal {
                     if let Some(net) = net_name {
                         if let Some(v) = by_net.get_mut(&net) {
                             let term = Arc::new(t);
@@ -215,10 +216,10 @@ impl Features {
 
         Features {
             terminals_by_net: by_net,
-            obstacles: obstacles,
-            all_pads: all_pads,
-            twonets_by_net: twonets_by_net,
-            all_layers: all_layers,
+            obstacles,
+            all_pads,
+            twonets_by_net,
+            all_layers,
             paths_by_layer: HashMap::new(),
             cdt_edges: Vec::new(),
             via_shape: via_shape.clone(),

@@ -44,31 +44,31 @@ pub enum ErrorKind {
 
 impl Value {
     pub fn as_string(&self) -> Fallible<&String> {
-        match self {
-            &Value::Quoted(ref s) => Ok(s),
-            &Value::Literal(ref s) => Ok(s),
+        match *self {
+            Value::Quoted(ref s) => Ok(s),
+            Value::Literal(ref s) => Ok(s),
             _ => Err(ErrorKind::NoStringRep(self.clone()).into()),
         }
     }
 
     pub fn as_i64(&self) -> Fallible<i64> {
-        match self {
-            &Value::Integer(ref s) => Ok(*s),
+        match *self {
+            Value::Integer(ref s) => Ok(*s),
             _ => Err(ErrorKind::NoIntRep.into()),
         }
     }
 
     pub fn as_f64(&self) -> Fallible<f64> {
-        match self {
-            &Value::Float(ref s) => Ok(*s),
-            &Value::Integer(ref s) => Ok(*s as f64),
+        match *self {
+            Value::Float(ref s) => Ok(*s),
+            Value::Integer(ref s) => Ok(*s as f64),
             _ => Err(ErrorKind::NoFloatRep.into()),
         }
     }
 
     pub fn as_tagged_value(&self) -> Fallible<(&String, Value)> {
-        match self {
-            &Value::TaggedList(ref tag, ref list) => {
+        match *self {
+            Value::TaggedList(ref tag, ref list) => {
                 if list.len() != 1 {
                     Err(ErrorKind::ExpectedTaggedValue(self.clone()).into())
                 } else {
@@ -80,15 +80,15 @@ impl Value {
     }
 
     pub fn as_tagged_list(&self) -> Fallible<(&String, Vec<Value>)> {
-        match self {
-            &Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
+        match *self {
+            Value::TaggedList(ref tag, ref list) => Ok((tag, list.clone())),
             _ => Err(ErrorKind::ExpectedTaggedList(self.clone()).into()),
         }
     }
 
     pub fn as_tagged_list_with_name(&self, name: &'static str) -> Fallible<Vec<Value>> {
-        match self {
-            &Value::TaggedList(ref tag, ref list) => {
+        match *self {
+            Value::TaggedList(ref tag, ref list) => {
                 if tag == name {
                     Ok(list.clone())
                 } else {
@@ -124,17 +124,11 @@ named!(quoted_string_parser<&[u8], Value>, do_parse!(
 ));
 
 fn literal_or_numeric(s: &str) -> Value {
-    match s.parse::<i64>() {
-        Ok(i) => {
-            return Value::Integer(i);
-        }
-        _ => {}
+    if let Ok(i) = s.parse::<i64>() {
+        return Value::Integer(i);
     }
-    match s.parse::<f64>() {
-        Ok(i) => {
-            return Value::Float(i);
-        }
-        _ => {}
+    if let Ok(i) = s.parse::<f64>() {
+        return Value::Float(i);
     }
     Value::Literal(s.to_owned())
 }
@@ -175,7 +169,7 @@ fn parse_value(bytes: &[u8]) -> Fallible<Value> {
             if let Some(v) = prepare_errors(bytes, res) {
                 Err(ErrorKind::Nom(format!("\n{}", print_offsets(bytes, 0, &v))).into())
             } else {
-                Err(ErrorKind::Nom(format!("sadness")).into())
+                Err(ErrorKind::Nom("sadness".to_string()).into())
             }
         }
     }
@@ -272,8 +266,8 @@ pub struct Pcb {
 
 impl DsnShape {
     //! parses a tagged list into a shape instance
-    fn parse(tag: &String, list: &Vec<Value>, drill: bool) -> Fallible<DsnShape> {
-        match tag.as_ref() {
+    fn parse(tag: &str, list: &[Value], drill: bool) -> Fallible<DsnShape> {
+        match tag {
             "path" | "polygon" => DsnShape::parse_path(list, drill),
             "circle" => DsnShape::parse_circle(list),
             "rect" => DsnShape::parse_rect(list),
@@ -281,7 +275,7 @@ impl DsnShape {
         }
     }
 
-    fn parse_circle(list: &Vec<Value>) -> Fallible<DsnShape> {
+    fn parse_circle(list: &[Value]) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let diameter = list[1].as_f64()?;
@@ -299,7 +293,7 @@ impl DsnShape {
         })
     }
 
-    fn parse_path(list: &Vec<Value>, drill: bool) -> Fallible<DsnShape> {
+    fn parse_path(list: &[Value], drill: bool) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let mut points = Vec::new();
@@ -331,7 +325,7 @@ impl DsnShape {
         })
     }
 
-    fn parse_rect(list: &Vec<Value>) -> Fallible<DsnShape> {
+    fn parse_rect(list: &[Value]) -> Fallible<DsnShape> {
         let layer = list[0].as_string()?;
 
         let (bottom_left_x, bottom_left_y) = (list[1].as_f64()?, list[2].as_f64()?);
@@ -354,7 +348,7 @@ impl DsnShape {
 
 impl Parser {
     //! parses a value list into an existing Parser object
-    fn new(list: &Vec<Value>) -> Fallible<Parser> {
+    fn new(list: &[Value]) -> Fallible<Parser> {
         let mut p = Parser::default();
 
         for ele in list.iter() {
@@ -384,7 +378,7 @@ impl Parser {
 
 impl Layer {
     //! parses a value list into a new Layer object
-    fn new(list: &Vec<Value>) -> Fallible<Layer> {
+    fn new(list: &[Value]) -> Fallible<Layer> {
         let mut l = Layer::default();
 
         l.name = list[0].as_string()?.clone();
@@ -416,7 +410,7 @@ impl Layer {
 }
 
 impl Rule {
-    fn new(list: &Vec<Value>) -> Fallible<Rule> {
+    fn new(list: &[Value]) -> Fallible<Rule> {
         let mut rule = Rule::default();
 
         for ele in list.iter() {
@@ -444,7 +438,7 @@ impl Rule {
 
 impl Structure {
     //! parses a value list and populates an existing Structure instance
-    fn new(list: &Vec<Value>) -> Fallible<Structure> {
+    fn new(list: &[Value]) -> Fallible<Structure> {
         let mut s = Structure::default();
         for ele in list.iter() {
             let (k, list) = ele.as_tagged_list()?;
@@ -521,7 +515,7 @@ impl Pcb {
         Ok(pcb)
     }
 
-    fn network_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
+    fn network_list(&mut self, list: &[Value]) -> Fallible<()> {
         for ele in list.iter() {
             let (tagname, list) = ele.as_tagged_list()?;
             match tagname.as_ref() {
@@ -538,11 +532,8 @@ impl Pcb {
                     let mut class = NetClass::default();
                     class.class_name = list[0].as_string()?.clone();
                     for ele in list.iter().skip(1) {
-                        match ele {
-                            &Value::Literal(ref s) => {
-                                class.nets.insert(s.clone());
-                            }
-                            _ => {}
+                        if let Value::Literal(ref s) = *ele {
+                            class.nets.insert(s.clone());
                         }
                     }
                     self.net_classes.insert(class.class_name.clone(), class);
@@ -553,7 +544,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn component_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
+    fn component_list(&mut self, list: &[Value]) -> Fallible<()> {
         for ele in list.iter() {
             let list = ele.as_tagged_list_with_name("component")?;
             let component_type = list[0].as_string()?;
@@ -574,7 +565,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn padstack(&mut self, list: &Vec<Value>) -> Fallible<()> {
+    fn padstack(&mut self, list: &[Value]) -> Fallible<()> {
         let mut def = PadStack::default();
         def.pad_type = list[0].as_string()?.clone();
 
@@ -601,7 +592,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn image(&mut self, list: &Vec<Value>) -> Fallible<()> {
+    fn image(&mut self, list: &[Value]) -> Fallible<()> {
         let mut def = ComponentDef::default();
         def.component_type = list[0].as_string()?.clone();
 
@@ -629,7 +620,7 @@ impl Pcb {
         Ok(())
     }
 
-    fn parse_pin(&self, list: &Vec<Value>) -> Fallible<Pin> {
+    fn parse_pin(&self, list: &[Value]) -> Fallible<Pin> {
         if list.len() == 4 {
             Ok(Pin {
                 pad_type: list[0].as_string()?.clone(),
@@ -650,7 +641,7 @@ impl Pcb {
         }
     }
 
-    fn component_def_list(&mut self, list: &Vec<Value>) -> Fallible<()> {
+    fn component_def_list(&mut self, list: &[Value]) -> Fallible<()> {
         for image in list.iter() {
             let (tagname, list) = image.as_tagged_list()?;
             match tagname.as_ref() {

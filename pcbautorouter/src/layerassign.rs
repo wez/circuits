@@ -38,7 +38,7 @@ pub struct TerminalOnLayer {
 impl TerminalOnLayer {
     fn new(terminal_id: TerminalId, layer: usize) -> TerminalOnLayer {
         TerminalOnLayer {
-            terminal_id: terminal_id,
+            terminal_id,
             layer: layer as u8,
         }
     }
@@ -70,9 +70,9 @@ impl Node {
     }
 
     fn as_terminal_on_layer(&self) -> Option<TerminalOnLayer> {
-        match self {
-            &Node::Terminal(tol) => Some(tol),
-            &Node::Via(tol) => Some(tol),
+        match *self {
+            Node::Terminal(tol) => Some(tol),
+            Node::Via(tol) => Some(tol),
             _ => None,
         }
     }
@@ -146,6 +146,12 @@ impl Clone for ComponentList {
     }
 }
 
+pub type Intersection = (
+    Arc<Terminal>,
+    Arc<Terminal>,
+    ncollide2d::query::Contact<f64>,
+);
+
 impl ComponentList {
     fn new() -> ComponentList {
         ComponentList {
@@ -156,23 +162,13 @@ impl ComponentList {
         }
     }
 
-    fn intersects(
-        &self,
-        edge: &PathEdge,
-        clearance: f64,
-    ) -> Option<
-        Vec<(
-            Arc<Terminal>,
-            Arc<Terminal>,
-            ncollide2d::query::Contact<f64>,
-        )>,
-    > {
+    fn intersects(&self, edge: &PathEdge, clearance: f64) -> Option<Vec<Intersection>> {
         if let Some((ref line, ref bv)) = edge.line {
             let mut candidates = Vec::new();
             self.broad_phase
                 .interferences_with_bounding_volume(bv, &mut candidates);
 
-            if candidates.len() > 0 {
+            if !candidates.is_empty() {
                 return Some(
                     candidates
                         .into_iter()
@@ -203,11 +199,11 @@ impl ComponentList {
         let a_idx = self
             .terminal_to_component
             .get(&raw_terminal_ptr(ta))
-            .map(|x| *x);
+            .copied();
         let b_idx = self
             .terminal_to_component
             .get(&raw_terminal_ptr(tb))
-            .map(|x| *x);
+            .copied();
 
         if a_idx.is_none() {
             (b_idx, None)
@@ -220,8 +216,8 @@ impl ComponentList {
             if a_idx == b_idx {
                 (Some(a_idx), None)
             } else {
-                let ref a = self.components[a_idx];
-                let ref b = self.components[b_idx];
+                let a = &self.components[a_idx];
+                let b = &self.components[b_idx];
 
                 let a_len = a.terminals.len();
                 let b_len = b.terminals.len();
@@ -258,7 +254,7 @@ impl ComponentList {
             if let Some(src_idx) = src_idx {
                 // Merge src_comp into target_comp
                 let mut src_comp = self.components[src_idx].clone();
-                let ref mut target_comp = self.components[target_idx];
+                let target_comp = &mut self.components[target_idx];
 
                 for t in src_comp.terminals.iter() {
                     self.terminal_to_component
@@ -275,7 +271,7 @@ impl ComponentList {
             self.terminal_to_component
                 .insert(raw_terminal_ptr(b), target_idx);
 
-            let ref mut target_comp = self.components[target_idx];
+            let target_comp = &mut self.components[target_idx];
             target_comp.terminals.insert(Arc::clone(a));
             target_comp.terminals.insert(Arc::clone(b));
             target_comp
@@ -377,9 +373,7 @@ impl SharedConfiguration {
         let raw = raw_terminal_ptr(terminal);
         use std::collections::hash_map::Entry::{Occupied, Vacant};
         match self.terminals.entry(raw) {
-            Occupied(ent) => {
-                return ent.get().terminal_id;
-            }
+            Occupied(ent) => ent.get().terminal_id,
             Vacant(ent) => {
                 let id = self.terminal_by_id.len();
                 ent.insert(TerminalInfo {
@@ -440,7 +434,7 @@ impl SharedConfiguration {
                 net_name: a.net_name.clone(),
                 layers: self.all_layers.clone(),
                 shape: via_shape.translate_by_point(&pt),
-                point: pt.clone(),
+                point: pt,
             });
             let id = self.add_terminal(&terminal);
 
@@ -452,6 +446,7 @@ impl SharedConfiguration {
         }
 
         // Build up/down connectivity between the vias
+        #[allow(clippy::needless_range_loop)]
         for i in 0..num_vias {
             for layer in 0..self.all_layers.len() - 1 {
                 let via_terminal = via_terminals[i];
@@ -533,7 +528,7 @@ impl Configuration {
     pub fn new(shared: &Rc<SharedConfiguration>) -> Configuration {
         let terminals = shared.terminals.clone();
         let mut cfg = Configuration {
-            terminals: terminals,
+            terminals,
             components: Vec::new(),
             shared: Rc::clone(shared),
             assignment: Vec::new(),
@@ -557,12 +552,12 @@ impl Configuration {
             return ::std::f64::INFINITY;
         }
 
-        if info.configured_layers.len() > 0 && !info.configured_layers.contains(&tol.layer) {
+        if !info.configured_layers.is_empty() && !info.configured_layers.contains(&tol.layer) {
             // TODO: re-examine the intent of this check.  Right now it
             // prevents us from using the alternate layer in most cases.
             // return ::std::f64::INFINITY;
         }
-        return 0.0;
+        0.0
     }
 
     fn detour_cost(
@@ -570,11 +565,11 @@ impl Configuration {
         a: &Arc<Terminal>,
         b: &Arc<Terminal>,
         comp_list: &ComponentList,
-        contacts: &Vec<(
+        contacts: &[(
             Arc<Terminal>,
             Arc<Terminal>,
             ncollide2d::query::Contact<f64>,
-        )>,
+        )],
     ) -> f64 {
         let mut cost = 0.0;
         for &(ref terminal_a, ref terminal_b, _) in contacts.iter() {
@@ -620,10 +615,10 @@ impl Configuration {
     }
 
     fn edge_cost(&self, a: &Node, b: &Node, edge: &PathEdge) -> f64 {
-        if let &Node::Source(tid) = a {
+        if let Node::Source(tid) = *a {
             return self.src_sink_cost(tid, &b.as_terminal_on_layer().expect("b must be tol"));
         }
-        if let &Node::Sink(tid) = b {
+        if let Node::Sink(tid) = *b {
             return self.src_sink_cost(tid, &a.as_terminal_on_layer().expect("a must be tol"));
         }
         let a = a.as_terminal_on_layer().expect("a must be tol");
@@ -661,7 +656,7 @@ impl Configuration {
     }
 
     fn assign_terminal_to_layer(&mut self, tol: &Option<TerminalOnLayer>) {
-        if let &Some(tol) = tol {
+        if let Some(tol) = *tol {
             let t = &self.shared.terminal_by_id[&tol.terminal_id];
             // We always populate self.terminals during initialization,
             // so this condition should always hold true.
@@ -675,7 +670,7 @@ impl Configuration {
     }
 
     fn path_for_net(&self, netid: TwoNetId, cutoff: Option<f64>) -> Option<(f64, Vec<Node>)> {
-        let ref twonet = self.shared.two_nets[netid];
+        let twonet = &self.shared.two_nets[netid];
 
         shortest_path(
             &twonet.graph,
@@ -723,7 +718,7 @@ impl Configuration {
         let mut free_nets: HashSet<TwoNetId> = (0..self.shared.two_nets.len()).collect();
 
         loop {
-            if free_nets.len() == 0 {
+            if free_nets.is_empty() {
                 break;
             }
 
@@ -731,8 +726,8 @@ impl Configuration {
             let mut best = None;
             for i in free_nets.iter() {
                 let netid: TwoNetId = *i;
-                let ref twonet = self.shared.two_nets[netid];
-                let cutoff = best.as_ref().and_then(|&(_, cost, _, _)| Some(cost));
+                let twonet = &self.shared.two_nets[netid];
+                let cutoff = best.as_ref().map(|&(_, cost, _, _)| cost);
 
                 if let Some((cost, path)) = self.path_for_net(netid, cutoff) {
                     if best.is_none() || cost < best.as_ref().map(|&(_, cost, _, _)| cost).unwrap()
@@ -747,10 +742,10 @@ impl Configuration {
             free_nets.remove(&netid);
 
             self.assign_path(Assignment {
-                netid: netid,
-                cost: cost,
-                path: path,
-                base_cost: base_cost,
+                netid,
+                cost,
+                path,
+                base_cost,
             });
         }
     }
@@ -797,7 +792,7 @@ impl Configuration {
             let mut complete = true;
             for idx in [worst_idx]
                 .iter()
-                .map(|x| *x)
+                .copied()
                 .chain((0..self.assignment.len()).filter(|x| *x != worst_idx))
             {
                 let assignment = &self.assignment[idx];
@@ -809,8 +804,8 @@ impl Configuration {
                 if let Some((cost, path)) = cfg.path_for_net(assignment.netid, cutoff) {
                     cfg.assign_path(Assignment {
                         netid: assignment.netid,
-                        cost: cost,
-                        path: path,
+                        cost,
+                        path,
                         base_cost: assignment.base_cost,
                     });
                 } else {
@@ -833,25 +828,22 @@ impl Configuration {
             paths.insert(*layer_id, Vec::new());
         }
 
-        for ref assignment in self.assignment.iter() {
+        for assignment in self.assignment.iter() {
             for i in 0..assignment.path.len() - 1 {
                 let a = assignment.path[i];
                 let b = assignment.path[i + 1];
 
-                match (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
-                    (Some(a), Some(b)) => {
-                        if a.layer == b.layer {
-                            let ta = &self.shared.terminal_by_id[&a.terminal_id];
-                            let tb = &self.shared.terminal_by_id[&b.terminal_id];
+                if let (Some(a), Some(b)) = (a.as_terminal_on_layer(), b.as_terminal_on_layer()) {
+                    if a.layer == b.layer {
+                        let ta = &self.shared.terminal_by_id[&a.terminal_id];
+                        let tb = &self.shared.terminal_by_id[&b.terminal_id];
 
-                            if let Some(paths) = paths.get_mut(&b.layer) {
-                                if ta.point != tb.point {
-                                    paths.push((ta.point.into(), tb.point.into()));
-                                }
+                        if let Some(paths) = paths.get_mut(&b.layer) {
+                            if ta.point != tb.point {
+                                paths.push((ta.point.into(), tb.point.into()));
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }

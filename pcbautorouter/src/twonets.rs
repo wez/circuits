@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 type MSTGraph = UnGraph<usize, f64>;
 
-fn compute_mst(points: &Vec<geom::Point>) -> MSTGraph {
+fn compute_mst(points: &[geom::Point]) -> MSTGraph {
     let mut g = MSTGraph::new_undirected();
 
     // Add nodes to the graph and record the node indices;
@@ -27,8 +27,7 @@ fn compute_mst(points: &Vec<geom::Point>) -> MSTGraph {
         g.add_edge(*a, *b, geom::manhattan_distance(&a_point, &b_point));
     }
 
-    let mst = MSTGraph::from_elements(min_spanning_tree(&g));
-    mst
+    MSTGraph::from_elements(min_spanning_tree(&g))
 }
 
 fn mst_cost(g: &MSTGraph) -> f64 {
@@ -41,7 +40,7 @@ fn mst_cost(g: &MSTGraph) -> f64 {
     cost
 }
 
-fn hanan_grid(points: &Vec<geom::Point>) -> Vec<geom::Point> {
+fn hanan_grid(points: &[geom::Point]) -> Vec<geom::Point> {
     let mut hanan = Vec::new();
 
     for (i_point, j_point) in points.iter().tuple_combinations() {
@@ -56,7 +55,7 @@ fn intersects_obstacle(
     p: &geom::Point,
     via_shape: &geom::Shape,
     clearance: f64,
-    obstacles: &Vec<Arc<Terminal>>,
+    obstacles: &[Arc<Terminal>],
 ) -> bool {
     let via = via_shape.translate_by_point(&p);
     obstacles
@@ -70,10 +69,10 @@ fn intersects_obstacle(
 /// The return value is a list of tuples holding the indices
 /// in `terminals` of connected pairs.
 pub fn compute_2nets(
-    net_name: &String,
+    net_name: &str,
     terminals: &mut Vec<Arc<Terminal>>,
     all_layers: &LayerSet,
-    all_pads: &Vec<Arc<Terminal>>,
+    all_pads: &[Arc<Terminal>],
     clearance: f64,
     via_shape: &geom::Shape,
 ) -> Vec<(Arc<Terminal>, Arc<Terminal>)> {
@@ -160,7 +159,7 @@ pub fn compute_2nets(
     for pt in terminal_points.iter().skip(terminals.len()) {
         terminals.push(Arc::new(Terminal {
             identifier: None,
-            net_name: Some(net_name.clone()),
+            net_name: Some(net_name.to_string()),
             layers: all_layers.clone(),
             point: *pt,
             shape: via_shape.translate_by_point(&pt),

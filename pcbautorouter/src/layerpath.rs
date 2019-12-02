@@ -73,7 +73,7 @@ struct ComponentGrouper {
 
 impl ComponentWithHull {
     fn new(comp: &Component) -> ComponentWithHull {
-        let lines = comp
+        let lines: Vec<_> = comp
             .twonets
             .iter()
             .map(|&(a, b)| Shape::line(&a.point(), &b.point()))
@@ -92,18 +92,18 @@ impl ComponentWithHull {
 
         ComponentWithHull {
             twonets: comp.twonets.clone(),
-            lines: lines,
-            hull: hull,
-            bvs: bvs,
-            broad: broad,
+            lines,
+            hull,
+            bvs,
+            broad,
         }
     }
 }
 
 impl ComponentGrouper {
     fn biggest_component(&self, path: &Path) -> (Option<usize>, Option<usize>) {
-        let a_idx = self.point_to_comp.get(&path.0).map(|x| *x);
-        let b_idx = self.point_to_comp.get(&path.1).map(|x| *x);
+        let a_idx = self.point_to_comp.get(&path.0).copied();
+        let b_idx = self.point_to_comp.get(&path.1).copied();
 
         if a_idx.is_none() {
             return (b_idx, None);
@@ -120,8 +120,8 @@ impl ComponentGrouper {
             return (Some(a_idx), None);
         }
 
-        let ref a = self.components[a_idx];
-        let ref b = self.components[b_idx];
+        let a = &self.components[a_idx];
+        let b = &self.components[b_idx];
 
         let a_len = a.twonets.len();
         let b_len = b.twonets.len();
@@ -162,7 +162,7 @@ impl ComponentGrouper {
             self.point_to_comp.insert(path.0, target_idx);
             self.point_to_comp.insert(path.1, target_idx);
 
-            let ref mut target_comp = self.components[target_idx];
+            let target_comp = &mut self.components[target_idx];
             target_comp.twonets.push(*path);
         } else {
             // Create a new component
@@ -177,7 +177,7 @@ impl ComponentGrouper {
         }
     }
 
-    fn add_paths(&mut self, paths: &Vec<Path>) {
+    fn add_paths(&mut self, paths: &[Path]) {
         for path in paths.iter() {
             self.add_path(path);
         }
@@ -187,7 +187,7 @@ impl ComponentGrouper {
     fn minimize(&self) -> Vec<ComponentWithHull> {
         self.components
             .iter()
-            .filter(|comp| comp.twonets.len() > 0)
+            .filter(|comp| !comp.twonets.is_empty())
             .map(|comp| ComponentWithHull::new(comp))
             .collect()
     }
@@ -206,8 +206,8 @@ impl PathConfiguration {
     pub fn new(
         clearance: f64,
         cdt: Rc<CDTGraph>,
-        paths: &Vec<Path>,
-        all_pads: &Vec<Arc<Terminal>>,
+        paths: &[Path],
+        all_pads: &[Arc<Terminal>],
     ) -> PathConfiguration {
         let mut pads = PadBroadPhase::new(clearance);
 
@@ -217,20 +217,20 @@ impl PathConfiguration {
         pads.update(&mut InterferenceHandler {});
 
         let mut components = ComponentGrouper::default();
-        components.add_paths(&paths);
+        components.add_paths(paths);
 
         PathConfiguration {
-            cdt: cdt,
+            cdt,
             assignment: Assignment::new(clearance),
-            all_pads: all_pads.clone(),
+            all_pads: all_pads.to_vec(),
             broad_all_pads: pads,
-            clearance: clearance,
+            clearance,
             components: components.minimize(),
         }
     }
 
-    fn edge_cost(&self, a: &OrderedPoint, b: &OrderedPoint, edge_weight: &f64) -> f64 {
-        let base_cost = *edge_weight;
+    fn edge_cost(&self, a: &OrderedPoint, b: &OrderedPoint, edge_weight: f64) -> f64 {
+        let base_cost = edge_weight;
 
         // If this path crosses any pads we disallow it, unless it is intentionally
         // trying to be directly incident to the pad
@@ -247,7 +247,7 @@ impl PathConfiguration {
             if term.point == a.point() || term.point == b.point() {
                 continue;
             }
-            if let Some(_) = term.shape.contact(&line, self.clearance) {
+            if term.shape.contact(&line, self.clearance).is_some() {
                 // Otherwise we cannot connect here
                 return INFINITY;
             }
@@ -265,7 +265,7 @@ impl PathConfiguration {
             if path.0 == *a || path.0 == *b || path.1 == *a || path.1 == *b {
                 continue;
             }
-            if let Some(_) = edge_line.contact(&line, self.clearance) {
+            if edge_line.contact(&line, self.clearance).is_some() {
                 // Otherwise we cannot connect here
                 return INFINITY;
             }
@@ -283,7 +283,7 @@ impl PathConfiguration {
             &*self.cdt,
             twonet_path.0,
             twonet_path.1,
-            |(a, b, edge)| self.edge_cost(&a, &b, edge),
+            |(a, b, &edge)| self.edge_cost(&a, &b, edge),
             cutoff,
         )
     }
@@ -375,6 +375,7 @@ impl PathConfiguration {
             let mut best_cost = INFINITY;
             let mut best_comp = 0;
 
+            #[allow(clippy::needless_range_loop)]
             for j in 0..num_comps {
                 if selected.contains(&j) {
                     continue;
@@ -402,7 +403,7 @@ impl PathConfiguration {
             .iter()
             .rev()
             .flat_map(|i| self.components[*i].twonets.iter())
-            .map(|x| *x)
+            .copied()
             .collect()
     }
 
@@ -438,7 +439,7 @@ impl PathConfiguration {
                     .interferences_with_bounding_volume(&bv, &mut candidates);
 
                 for i_idx in candidates.iter().map(|x| *x) {
-                    if let Some(_) = line.contact(&component_i.lines[*i_idx], 0.0) {
+                    if line.contact(&component_i.lines[*i_idx], 0.0).is_some() {
                         // We have a collision so we need to detour around the hull
 
                         if let Some(detour) = component_i.hull.detour_path(&a, &b, 0.0) {
@@ -463,7 +464,7 @@ impl PathConfiguration {
                     if term.point == a || term.point == b {
                         continue;
                     }
-                    if let Some(_) = term.shape.contact(&line, self.clearance) {
+                    if term.shape.contact(&line, self.clearance).is_some() {
                         if let Some(detour) = term.shape.detour_path(&a, &b, 0.0) {
                             let (cost, _) =
                                 shortest_path(&detour, path.0, path.1, |(_, _, cost)| *cost, None)
@@ -478,7 +479,7 @@ impl PathConfiguration {
         detour_cost + base_cost
     }
 
-    pub fn compute_path_from_order(&mut self, twonets: &Vec<Path>) {
+    pub fn compute_path_from_order(&mut self, twonets: &[Path]) {
         for twonet_path in twonets.iter() {
             if let Some((_, path)) = self.compute_path(&twonet_path, None) {
                 self.add_assignment(path);
